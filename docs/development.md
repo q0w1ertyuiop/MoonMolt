@@ -49,3 +49,5 @@ The packed archive was installed in an independent consumer directory with lifec
 Integration review identified that independently loaded runtime modules could otherwise have separate queues around the same global FFI callback. The queue now uses a shared process symbol, with a test loading an independent runtime instance and issuing two upgrades concurrently.
 
 The first remote CI run failed on every platform before compilation: fresh runners did not have the Mooncakes registry index. CI now runs `moon update`, and the source build script initializes the registry when no dependency cache exists. Local cached builds had concealed this setup requirement.
+
+Two final fault probes check failure reporting: a lost COMMIT acknowledgement returns `commit_outcome_unknown` and a retry consults history rather than duplicating the committed update; a partial backup is explicitly reported as incomplete and leaves the source database unchanged.

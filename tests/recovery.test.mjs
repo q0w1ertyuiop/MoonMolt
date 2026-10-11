@@ -139,3 +139,39 @@ test('independently loaded runtime modules share the host session queue', async 
   assert.equal(reports.filter(r => r.noop).length, 1);
   assert.equal(check(f.db).rows[0].value, 11);
 });
+
+test('uncertain commit outcome is reported without replaying a committed upgrade', async t => {
+  const f = fixture(t);
+  const original = Adapter.prototype.dispatch;
+  Adapter.prototype.dispatch = function(op, args) {
+    const value = original.call(this, op, args);
+    if (op === 'commit' && args.id === 'source') throw Object.assign(new Error('simulated loss of COMMIT acknowledgement'), { kind: 'commit_outcome_unknown' });
+    return value;
+  };
+  let report;
+  try { report = await run({ command: 'apply', ...f }); }
+  finally { Adapter.prototype.dispatch = original; }
+  assert.equal(report.kind, 'commit_outcome_unknown');
+  assert.equal(check(f.db).rows[0].value, 11);
+  const retry = await run({ command: 'apply', ...f });
+  assert.equal(retry.noop, true);
+  assert.equal(check(f.db).rows[0].value, 11);
+});
+
+test('failed backup is never advertised as a completed restore snapshot', async t => {
+  const f = fixture(t);
+  const original = Adapter.prototype.makeBackup;
+  Adapter.prototype.makeBackup = async function() {
+    this.stage = 'backup'; this.persistentBackup = true;
+    this.backupPath = join(f.root, 'partial.sqlite');
+    writeFileSync(this.backupPath, 'incomplete');
+    throw new Error('simulated backup I/O failure');
+  };
+  let report;
+  try { report = await run({ command: 'apply', ...f }); }
+  finally { Adapter.prototype.makeBackup = original; }
+  assert.equal(report.ok, false);
+  assert.equal(report.backup, undefined);
+  assert.equal(report.incomplete_backup, join(f.root, 'partial.sqlite'));
+  assert.deepEqual(check(f.db), { rows: [{ id: 1, value: 10 }], history: 0 });
+});
