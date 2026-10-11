@@ -147,7 +147,7 @@ export class Adapter {
     try { return JSON.stringify({ ok: true, value: this.dispatch(op, JSON.parse(json)) }); }
     catch (error) {
       const busy = error.errcode === 5 || error.errcode === 6 || /database is (locked|busy)/i.test(error.message);
-      const kind = error.kind ?? (busy ? 'lock_timeout' : error instanceof TypeError || error.code?.startsWith('E') ? 'input' : 'database');
+      const kind = error.kind ?? (busy ? 'lock_timeout' : error.errcode !== undefined ? 'database' : error instanceof TypeError || error.code?.startsWith('E') ? 'input' : 'database');
       return JSON.stringify({ ok: false, kind, message: error.message });
     }
   }

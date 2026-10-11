@@ -58,6 +58,15 @@ pub(all) struct Prepared {
   pending : Array[Migration]
   backup_required : Bool
   report : Json
+  fingerprint : String
+} derive(Debug, ToJson, @json.FromJson)
+
+///|
+pub(all) struct SchemaSnapshot {
+  objects : Array[Json]
+  tables : Array[Json]
+  fingerprint : String
+  sqlite_version : String
 } derive(Debug, ToJson, @json.FromJson)
 
 ///|

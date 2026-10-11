@@ -11,7 +11,7 @@ pub fn complete(&Driver, Prepared) -> Json raise MigrationError
 
 pub fn error_json(MigrationError) -> Json
 
-pub fn inspect(&Driver, String) -> Json raise MigrationError
+pub fn inspect(&Driver, String) -> SchemaSnapshot raise MigrationError
 
 pub fn load_migrations(Array[MigrationSource]) -> Array[Migration] raise MigrationError
 
@@ -36,6 +36,7 @@ pub(all) suberror MigrationError {
   LockTimeout(String)
   CommitOutcomeUnknown(String)
 } derive(@debug.Debug)
+pub fn MigrationError::to_repr(Self) -> @debug.Repr
 
 // Types and methods
 pub(all) struct HistoryEntry {
@@ -48,6 +49,11 @@ pub(all) struct HistoryEntry {
   schema_after : String
   tool_version : String
 } derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+pub fn HistoryEntry::equal(Self, Self) -> Bool
+pub fn HistoryEntry::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn HistoryEntry::not_equal(Self, Self) -> Bool
+pub fn HistoryEntry::to_json(Self) -> Json
+pub fn HistoryEntry::to_repr(Self) -> @debug.Repr
 
 pub(all) struct Migration {
   version : Int
@@ -56,19 +62,31 @@ pub(all) struct Migration {
   checksum : String
   sql : String
 } derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+pub fn Migration::equal(Self, Self) -> Bool
+pub fn Migration::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Migration::not_equal(Self, Self) -> Bool
+pub fn Migration::to_json(Self) -> Json
+pub fn Migration::to_repr(Self) -> @debug.Repr
 
 pub(all) struct MigrationSource {
   filename : String
   checksum : String
   sql : String
 } derive(ToJson, @debug.Debug, @json.FromJson)
+pub fn MigrationSource::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn MigrationSource::to_json(Self) -> Json
+pub fn MigrationSource::to_repr(Self) -> @debug.Repr
 
 pub(all) struct Prepared {
   request : Request
   pending : Array[Migration]
   backup_required : Bool
   report : Json
+  fingerprint : String
 } derive(ToJson, @debug.Debug, @json.FromJson)
+pub fn Prepared::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Prepared::to_json(Self) -> Json
+pub fn Prepared::to_repr(Self) -> @debug.Repr
 
 pub(all) struct Request {
   command : String
@@ -78,6 +96,19 @@ pub(all) struct Request {
   create : Bool
   to : Int?
 } derive(ToJson, @debug.Debug, @json.FromJson)
+pub fn Request::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Request::to_json(Self) -> Json
+pub fn Request::to_repr(Self) -> @debug.Repr
+
+pub(all) struct SchemaSnapshot {
+  objects : Array[Json]
+  tables : Array[Json]
+  fingerprint : String
+  sqlite_version : String
+} derive(ToJson, @debug.Debug, @json.FromJson)
+pub fn SchemaSnapshot::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn SchemaSnapshot::to_json(Self) -> Json
+pub fn SchemaSnapshot::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

@@ -17,3 +17,13 @@ MoonBit's derived optional JSON fields accept absence, not JSON `null`. The init
 Real SQLite tests confirmed trigger bodies and strings containing semicolons work when scripts are passed intact to SQLite. Windows testing also exposed a fixture cleanup error: a WAL connection must be closed before deleting its database directory.
 
 The upstream planner correctly rejects making a nullable column required without a backfill default. The rebuild test now supplies an explicit default rather than bypassing this check.
+
+## Locking, crash recovery and model limits
+
+The next checks use independent Node processes: two executors target the same database and only one applies the migration; the second becomes a no-op after checking history under the lock. A process is also killed after inserting history inside the real transaction but before COMMIT. Reopening the database recovers the original schema and data, and a subsequent upgrade succeeds.
+
+Passing the raw schema snapshot directly into the planning model would lose features the model cannot express. These formats remain distinct. Automatic planning now rejects unknown fields, composite primary keys and decorated type declarations; the CLI's `inspect` output retains raw SQL and detailed SQLite metadata. Manual SQL remains available for advanced SQLite structures.
+
+The rehearsal clone is checked against the fingerprint captured during preparation. This also detects a schema change between an advisory rehearsal and its backup.
+
+SQLite exceptions use Node error codes beginning with `ERR_`; a broad filesystem-style error classifier initially labeled them as input errors. SQLite's numeric error field now takes precedence so execution failures are reported as database errors.

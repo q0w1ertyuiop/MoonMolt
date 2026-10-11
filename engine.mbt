@@ -6,8 +6,11 @@ fn[T : @json.FromJson] decode(value : Json) -> T raise MigrationError {
 }
 
 ///|
-pub fn inspect(driver : &Driver, id : String) -> Json raise MigrationError {
-  driver.call("inspect", { "id": id.to_json() })
+pub fn inspect(
+  driver : &Driver,
+  id : String,
+) -> SchemaSnapshot raise MigrationError {
+  decode(driver.call("inspect", { "id": id.to_json() }))
 }
 
 ///|
@@ -78,7 +81,8 @@ pub fn prepare(
       request,
       pending: [],
       backup_required: false,
-      report: { "ok": true, "snapshot": inspect(driver, "source") },
+      report: { "ok": true, "snapshot": inspect(driver, "source").to_json() },
+      fingerprint: "",
     }
   }
   if request.command == "apply" {
@@ -101,6 +105,7 @@ pub fn prepare(
     pending,
     backup_required: request.command != "status" && !pending.is_empty(),
     report,
+    fingerprint: decode(driver.call("fingerprint", { "id": "source" })),
   }
 }
 
@@ -166,6 +171,12 @@ pub fn complete(
     driver.call("open_clone", { "rebuild": prepared.request.rebuild.to_json() }),
   )
   ignore(driver.call("begin", { "id": "clone" }))
+  let cloned : String = decode(driver.call("fingerprint", { "id": "clone" }))
+  guard cloned == prepared.fingerprint else {
+    raise HistoryMismatch(
+      "database schema changed while preparing the rehearsal snapshot",
+    )
+  }
   let rehearsal = apply_batch(driver, "clone", prepared.pending)
   ignore(driver.call("commit", { "id": "clone" }))
   ignore(driver.call("close", { "id": "clone" }))

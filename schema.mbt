@@ -1,10 +1,16 @@
 ///|
-fn checked_object(value : Json, allowed : Array[String], path : String) -> Map[String, Json] raise MigrationError {
+fn checked_object(
+  value : Json,
+  allowed : Array[String],
+  path : String,
+) -> Map[String, Json] raise MigrationError {
   match value {
     Object(fields) => {
       for key, _ in fields {
         guard allowed.contains(key) else {
-          raise Policy("unsupported schema field \{path}.\{key}; use reviewed SQL instead")
+          raise Policy(
+            "unsupported schema field \{path}.\{key}; use reviewed SQL instead",
+          )
         }
       }
       fields
@@ -14,7 +20,10 @@ fn checked_object(value : Json, allowed : Array[String], path : String) -> Map[S
 }
 
 ///|
-fn model_array(fields : Map[String, Json], key : String) -> Array[Json] raise MigrationError {
+fn model_array(
+  fields : Map[String, Json],
+  key : String,
+) -> Array[Json] raise MigrationError {
   match fields.get(key) {
     Some(Array(items)) => items
     None => []
@@ -26,15 +35,36 @@ fn model_array(fields : Map[String, Json], key : String) -> Array[Json] raise Mi
 fn validate_model_shape(value : Json) -> Unit raise MigrationError {
   let root = checked_object(value, ["version", "tables", "views"], "schema")
   for table in model_array(root, "tables") {
-    let fields = checked_object(table, ["name", "columns", "indexes", "foreign_keys", "checks", "triggers"], "table")
+    let fields = checked_object(
+      table,
+      ["name", "columns", "indexes", "foreign_keys", "checks", "triggers"],
+      "table",
+    )
     for column in model_array(fields, "columns") {
-      ignore(checked_object(column, ["name", "data_type", "nullable", "primary_key", "unique", "default_value"], "column"))
+      ignore(
+        checked_object(
+          column,
+          [
+            "name", "data_type", "nullable", "primary_key", "unique", "default_value",
+          ],
+          "column",
+        ),
+      )
     }
     for index in model_array(fields, "indexes") {
       ignore(checked_object(index, ["name", "columns", "unique"], "index"))
     }
     for foreign_key in model_array(fields, "foreign_keys") {
-      ignore(checked_object(foreign_key, ["name", "columns", "referenced_table", "referenced_columns", "on_delete", "on_update"], "foreign_key"))
+      ignore(
+        checked_object(
+          foreign_key,
+          [
+            "name", "columns", "referenced_table", "referenced_columns", "on_delete",
+            "on_update",
+          ],
+          "foreign_key",
+        ),
+      )
     }
   }
 }
@@ -45,6 +75,18 @@ fn ensure_supported(schema : @schema.Schema) -> Unit raise MigrationError {
     raise Policy("automatic plans do not support views; use reviewed SQL")
   }
   for table in schema.tables {
+    guard table.columns.filter(c => c.primary_key).length() <= 1 else {
+      raise Policy("automatic plans do not support composite primary keys")
+    }
+    for column in table.columns {
+      match column.data_type.to_upper() {
+        "INTEGER" | "TEXT" | "REAL" | "BLOB" | "NUMERIC" => ()
+        _ =>
+          raise Policy(
+            "automatic plans require a plain SQLite affinity type in \{table.name}.\{column.name}",
+          )
+      }
+    }
     guard table.checks.is_empty() && table.triggers.is_empty() else {
       raise Policy(
         "automatic plans do not support CHECK constraints or triggers in \{table.name}",
