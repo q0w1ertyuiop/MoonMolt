@@ -129,6 +129,7 @@ test('strict UTF-8, duplicate version, missing database, explicit create and tar
   assert.equal(result.ok, true);
   assert.equal(query(f.db, "SELECT name FROM sqlite_schema WHERE name='second'").length, 0);
   assert.equal((await run({ command: 'apply', ...f, to: 999 })).kind, 'input');
+  assert.equal((await run({ command: 'apply', ...f, to: 1.5 })).kind, 'input');
   const missing = join(f.root, 'missing.db');
   assert.equal((await run({ command: 'apply', ...f, db: missing })).kind, 'input');
   assert.equal((await run({ command: 'apply', ...f, db: missing, create: true })).ok, true);

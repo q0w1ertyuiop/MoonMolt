@@ -51,3 +51,5 @@ Integration review identified that independently loaded runtime modules could ot
 The first remote CI run failed on every platform before compilation: fresh runners did not have the Mooncakes registry index. CI now runs `moon update`, and the source build script initializes the registry when no dependency cache exists. Local cached builds had concealed this setup requirement.
 
 Two final fault probes check failure reporting: a lost COMMIT acknowledgement returns `commit_outcome_unknown` and a retry consults history rather than duplicating the committed update; a partial backup is explicitly reported as incomplete and leaves the source database unchanged.
+
+The JavaScript library boundary also validates target versions as integers before invoking MoonBit's JSON decoder, so a fractional target cannot be silently converted to an integer.

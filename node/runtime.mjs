@@ -16,6 +16,9 @@ async function execute(input) {
   const request = { command: 'status', db: '', dir: 'migrations', rebuild: false, create: false, to: null, ...input };
   if (request.to == null) delete request.to;
   try {
+    if (request.to !== undefined && (!Number.isInteger(request.to) || request.to <= 0 || request.to > 999999)) {
+      throw Object.assign(new Error('target version must be an integer between 1 and 999999'), { kind: 'input' });
+    }
     adapter = new Adapter();
     globalThis.__moonmolt_dispatch = (op, args) => adapter.call(op, args);
     const result = JSON.parse(core.prepare_json(JSON.stringify(request)));
