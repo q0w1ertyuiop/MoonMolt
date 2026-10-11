@@ -53,3 +53,17 @@ The first remote CI run failed on every platform before compilation: fresh runne
 Two final fault probes check failure reporting: a lost COMMIT acknowledgement returns `commit_outcome_unknown` and a retry consults history rather than duplicating the committed update; a partial backup is explicitly reported as incomplete and leaves the source database unchanged.
 
 The JavaScript library boundary also validates target versions as integers before invoking MoonBit's JSON decoder, so a fractional target cannot be silently converted to an integer.
+
+## Application review: deleted IDs and embedded callers
+
+A table rebuild copied its surviving IDs correctly but reset the AUTOINCREMENT sequence: a previously issued and deleted ID could be reused after upgrade. This matters for synchronization logs and references outside SQLite. The engine now checks sequence floors before and after each script and fails before modifying the source if a same-name table loses its floor. It deliberately requires explicit SQL preservation rather than guessing identity across table renames. The regression covers an empty table and a deleted ID above JavaScript's safe integer range; a corrected migration produces the next exact 64-bit ID.
+
+The history reader previously accepted any table with a version primary key. A colliding empty metadata table with an insert trigger could change application rows when the engine recorded its first migration. The adapter now requires canonical history DDL with no attached objects and detects differently cased names. The core additionally verifies fingerprint continuity between entries and rejects negative durations.
+
+Status and inspection formerly used independent implicit read transactions. A WAL writer could finish an upgrade between the history query and schema query, producing a false drift report. Preparation now owns a read snapshot. Rehearsal releases that snapshot before backup, then verifies both the clone's history and schema; a data-only migration in another process cannot slip through the schema-only comparison. Actual process tests cover both races.
+
+Embedding exposed a separate queue boundary: requests were read only after earlier work completed. Mutating the input or changing the application's working directory could target a different database. The library now captures values and resolves paths synchronously at invocation. Lock waits and backup destinations are configurable, inappropriate command flags fail early, and the package ships a TypeScript declaration for its public requests and reports.
+
+The first minimum-version rerun found a test parsing all stderr as JSON; Node 24 also prints its SQLite experimental warning there. The assertion now selects the JSON report line. This was a test portability issue rather than a migration failure.
+
+After the correction, all 31 Node integration cases passed on Windows Node.js 24.10.0 and 26.2.0, alongside all four MoonBit tests and warning-free checks. The freshly packed archive was installed in an independent consumer with lifecycle scripts disabled; its public package exports ran apply/status/plan, and a strict TypeScript NodeNext consumer compiled successfully. The shop demo was rerun with intact orders, references and money amounts.

@@ -50,11 +50,15 @@ node node/cli.mjs apply --db app.db --dir migrations --rebuild
 import { run } from './node/runtime.mjs';
 const report = await run({
   command: 'apply', db: 'app.db', dir: 'migrations',
+  busy_timeout_ms: 5000,
+  // backup_dir: '/path/to/application-backups',
 });
 if (!report.ok) throw new Error(`${report.kind}: ${report.message}`);
 ```
 
 运行时串行处理同一 Node 进程中的调用；跨进程并发通过 SQLite 写锁协调。MoonBit 用户可复用根包的 `load_migrations`、`validate_history`、`plan`，或实现 `Driver` 调用 `prepare`／`complete`。接口见 [pkg.generated.mbti](pkg.generated.mbti)，宿主操作约定见 [执行协议](docs/engine.md)。目前根包使用本地开发模块标识，不代表已在 Mooncakes 注册。
+
+库调用在入队前固定参数并解析绝对路径，调用后修改原对象或工作目录不会改变迁移目标。`busy_timeout_ms` 配置锁等待（默认 5000，0 表示立即失败）；`backup_dir` 为 `apply` 指定持久备份目录，对应 CLI 的 `--busy-timeout-ms` 和 `--backup-dir`。安装包附带 TypeScript 类型声明。SQLite 执行是同步的，长迁移建议在维护窗口或独立工作进程运行。
 
 ## Schema 辅助规划
 
@@ -87,6 +91,8 @@ node node/cli.mjs plan --before examples/before.json --after examples/after.json
 脚本不能自行控制事务、保存点、附加数据库、修改迁移历史或修改 PRAGMA 配置。允许无参数的只读外键检查，以支持生成 SQL 的检查步骤。脚本整体交给 SQLite 执行，字符串中的分号和触发器 `BEGIN / END` 不会被错误切分。
 
 备份位于 `<数据库路径>.moonmolt-backups/`，每次使用唯一文件名，旁边保存 JSON 执行报告；恢复步骤见 [备份恢复说明](docs/restore.md)。演练不会验证全部业务逻辑，也不能预先保证磁盘或进程在后续不会出错。若返回 `commit_outcome_unknown`，先检查历史，禁止盲目重放。
+
+重建带 `AUTOINCREMENT` 的表时，复制存量行并不能保留已经删除记录的 ID 上限。引擎会在每个脚本结束后检查同名表的 `sqlite_sequence`，发现上限降低或丢失即阻止升级。脚本应显式保留旧上限，并在插入新记录前恢复；更换表名时需按新名称恢复，引擎无法从任意 SQL 推断表的身份。自动模型不支持 AUTOINCREMENT，请使用人工 SQL。历史表的非标准结构、额外索引或触发器也会被拒绝。
 
 ## 验证与打包
 
