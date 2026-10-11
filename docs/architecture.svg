@@ -21,18 +21,18 @@
   <text x="60" y="287" class="small">结构模型 → SQL 草稿</text>
   <rect x="340" y="160" width="450" height="215" rx="14" class="core"/>
   <text x="365" y="196" class="heading">MoonBit：规则与执行编排</text>
-  <text x="365" y="232" class="body">文件排序 · 历史前缀校验 · 结构漂移检查</text>
+  <text x="365" y="232" class="body">历史前缀与指纹链 · 结构漂移检查</text>
   <text x="365" y="263" class="body">prepare → 备份 → complete</text>
   <text x="365" y="294" class="body">整批事务 · 外键检查 · 演练结构比对</text>
   <text x="365" y="327" class="small">moon_schema_plan@0.4.0：差异与 SQL 生成</text>
-  <text x="365" y="353" class="small">明确失败报告；成功历史与数据同时提交</text>
+  <text x="365" y="353" class="small">保护自增 ID 上限；数据与历史同时提交</text>
   <rect x="830" y="160" width="320" height="215" rx="14" class="box"/>
   <text x="850" y="196" class="heading">Node.js：宿主操作</text>
   <text x="850" y="232" class="body">node:sqlite · 参数绑定</text>
   <text x="850" y="263" class="body">文件读取 · 指纹 · 在线备份</text>
   <text x="850" y="294" class="body">Authorizer 限制脚本操作</text>
   <text x="850" y="327" class="small">关闭连接 · 回滚 · 清理临时副本</text>
-  <text x="850" y="353" class="small">异步备份期间保持执行会话</text>
+  <text x="850" y="353" class="small">固定调用参数；进程内共享执行队列</text>
   <path d="M300 230H335" class="line"/>
   <path d="M790 230H825" class="line"/>
   <path d="M990 375V425H190V465" class="line"/>
@@ -51,7 +51,7 @@
   <text x="780" y="506" class="heading">③ 演练副本</text>
   <text x="780" y="542" class="body">使用同一份不可变迁移 SQL</text>
   <text x="780" y="573" class="body">执行 + 外键检查 + quick_check</text>
-  <text x="780" y="611" class="small">通过后原库执行；失败时停止并报告</text>
+  <text x="780" y="611" class="small">执行前核对结构与历史；通过后升级原库</text>
   <path d="M340 555H395" class="line"/>
   <path d="M700 555H755" class="line"/>
   <path d="M970 470V400H565V380" fill="none" stroke="#34d399" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#check)"/>
