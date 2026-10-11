@@ -6,8 +6,8 @@
   "type": "module",
   "engines": { "node": ">=24.10.0" },
   "bin": { "moonmolt": "node/cli.mjs" },
-  "exports": { ".": "./node/runtime.mjs" },
-  "files": ["dist/", "node/*.mjs", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "docs/"],
+  "exports": { ".": { "types": "./node/runtime.d.mts", "import": "./node/runtime.mjs" } },
+  "files": ["dist/", "node/*.mjs", "node/*.d.mts", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "docs/"],
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --test tests/*.test.mjs",
