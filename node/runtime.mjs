@@ -3,10 +3,10 @@ import { Adapter } from './adapter.mjs';
 
 // The generated module calls a host function. Serialize sessions so two callers
 // cannot replace one another's connection context during asynchronous backup.
-let tail = Promise.resolve();
+const SESSION_QUEUE = Symbol.for('moonmolt.session.queue');
 export function run(request) {
-  const work = tail.then(() => execute(request));
-  tail = work.catch(() => {});
+  const work = (globalThis[SESSION_QUEUE] ?? Promise.resolve()).then(() => execute(request));
+  globalThis[SESSION_QUEUE] = work.catch(() => {});
   return work;
 }
 

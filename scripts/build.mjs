@@ -1,7 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, copyFileSync } from 'node:fs';
+import { mkdirSync, copyFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
+if (!existsSync(new URL('../.mooncakes/', import.meta.url))) {
+  const update = spawnSync('moon', ['update'], { cwd: root, stdio: 'inherit', shell: false });
+  if (update.error) throw update.error;
+  if (update.status) process.exit(update.status);
+}
 const run = spawnSync('moon', ['build', '--target', 'js', '--release', '--deny-warn'], { cwd: root, stdio: 'inherit', shell: false });
 if (run.error) throw run.error;
 if (run.status) process.exit(run.status);

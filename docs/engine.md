@@ -19,7 +19,7 @@ The Node bridge exposes `prepare_json`, `complete_json` and `plan_json`; these a
 | `fingerprint` | `id` | SHA-256 of deterministically ordered schema objects |
 | `exec_script` | `id, sql, filename` | null; guarded SQLite execution, never split on semicolons |
 | `validate` | `id` | null only when foreign_key_check is empty and quick_check is `ok` |
-| `clock / timestamp` | empty object | Monotonic integer milliseconds / UTC ISO-8601 string |
+| `clock / timestamp` | empty object | Decimal string of monotonic milliseconds / UTC ISO-8601 string |
 
 Fingerprinting excludes SQLite-owned objects and the migration history table; it detects schema edits, not business-data changes. Column/index/foreign-key metadata is retained separately by inspection. Node query results preserve large integers as `{$int64: "decimal"}` and bytes as `{$blob: "base64"}` when transported as JSON; SQLite performs migration data copies directly without converting through JavaScript numbers.
 

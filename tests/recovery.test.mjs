@@ -130,3 +130,12 @@ test('clock timestamps beyond signed 32-bit uptime remain supported', async t =>
   assert.equal(report.ok, true, JSON.stringify(report));
   assert.equal(report.result.applied[0].duration_ms, '1');
 });
+
+test('independently loaded runtime modules share the host session queue', async t => {
+  const f = fixture(t);
+  const independent = await import('../node/runtime.mjs?independent-session');
+  const reports = await Promise.all([run({ command: 'apply', ...f }), independent.run({ command: 'apply', ...f })]);
+  for (const report of reports) assert.equal(report.ok, true, JSON.stringify(report));
+  assert.equal(reports.filter(r => r.noop).length, 1);
+  assert.equal(check(f.db).rows[0].value, 11);
+});

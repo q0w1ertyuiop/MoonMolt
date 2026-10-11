@@ -45,3 +45,7 @@ Final lifecycle checks cover editing a migration file during backup: both execut
 The first 64-bit timing change exposed another codec boundary: MoonBit expects decimal strings for Int64 JSON, while the host was returning numbers. Clock and duration transports now consistently use decimal strings; SQLite receives bound BigInt values. All 18 integration cases passed on both Windows Node.js 24.10.0 and 26.2.0 after this correction. The four MoonBit tests and warning-free type/build checks passed as well.
 
 The packed archive was installed in an independent consumer directory with lifecycle scripts disabled. Its CLI ran, and its library created, migrated and inspected a database using the included compiled engine. No MoonBit source or build step was needed in that consumer directory.
+
+Integration review identified that independently loaded runtime modules could otherwise have separate queues around the same global FFI callback. The queue now uses a shared process symbol, with a test loading an independent runtime instance and issuing two upgrades concurrently.
+
+The first remote CI run failed on every platform before compilation: fresh runners did not have the Mooncakes registry index. CI now runs `moon update`, and the source build script initializes the registry when no dependency cache exists. Local cached builds had concealed this setup requirement.
