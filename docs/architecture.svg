@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="740" viewBox="0 0 1200 740" role="img" aria-labelledby="title desc">
+  <title id="title">MoonMolt SQLite migration architecture</title>
+  <desc id="desc">MoonBit owns migration policy and execution orchestration. Node provides SQLite and file operations. A write lock protects the original database while a read-only snapshot is copied and rehearsed before transactional upgrade.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#60a5fa"/></marker>
+    <marker id="check" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#34d399"/></marker>
+    <style>
+      text{font-family:'Microsoft YaHei','Noto Sans CJK SC',sans-serif;fill:#e2e8f0}
+      .title{font-size:30px;font-weight:700}.heading{font-size:21px;font-weight:700}.body{font-size:16px}.small{font-size:14px;fill:#94a3b8}
+      .box{fill:#142239;stroke:#334a68;stroke-width:1.5}.core{fill:#192345;stroke:#a5b4fc;stroke-width:2}.line{fill:none;stroke:#60a5fa;stroke-width:2;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1200" height="740" rx="20" fill="#0b1324"/>
+  <text x="40" y="60" class="title">MoonMolt · 月蜕</text>
+  <text x="40" y="94" class="body">结构焕新，数据如初 · SQLite 迁移、演练与原子升级</text>
+  <text x="1150" y="60" class="small" text-anchor="end">MoonBit 核心 + Node.js 适配器</text>
+  <rect x="40" y="160" width="260" height="150" rx="14" class="box"/>
+  <text x="60" y="195" class="heading">CLI / 应用调用</text>
+  <text x="60" y="230" class="body">status · plan · apply</text>
+  <text x="60" y="259" class="body">版本 SQL + SHA-256</text>
+  <text x="60" y="287" class="small">结构模型 → SQL 草稿</text>
+  <rect x="340" y="160" width="450" height="215" rx="14" class="core"/>
+  <text x="365" y="196" class="heading">MoonBit：规则与执行编排</text>
+  <text x="365" y="232" class="body">文件排序 · 历史前缀校验 · 结构漂移检查</text>
+  <text x="365" y="263" class="body">prepare → 备份 → complete</text>
+  <text x="365" y="294" class="body">整批事务 · 外键检查 · 演练结构比对</text>
+  <text x="365" y="327" class="small">moon_schema_plan@0.4.0：差异与 SQL 生成</text>
+  <text x="365" y="353" class="small">明确失败报告；成功历史与数据同时提交</text>
+  <rect x="830" y="160" width="320" height="215" rx="14" class="box"/>
+  <text x="850" y="196" class="heading">Node.js：宿主操作</text>
+  <text x="850" y="232" class="body">node:sqlite · 参数绑定</text>
+  <text x="850" y="263" class="body">文件读取 · 指纹 · 在线备份</text>
+  <text x="850" y="294" class="body">Authorizer 限制脚本操作</text>
+  <text x="850" y="327" class="small">关闭连接 · 回滚 · 清理临时副本</text>
+  <text x="850" y="353" class="small">异步备份期间保持执行会话</text>
+  <path d="M300 230H335" class="line"/>
+  <path d="M790 230H825" class="line"/>
+  <path d="M990 375V425H190V465" class="line"/>
+  <text x="340" y="448" class="small">专用连接获得写锁；源库保持不变直到演练通过</text>
+  <rect x="40" y="470" width="300" height="170" rx="14" class="box"/>
+  <text x="60" y="506" class="heading">① SQLite 原库</text>
+  <text x="60" y="542" class="body">BEGIN IMMEDIATE</text>
+  <text x="60" y="573" class="body">业务数据 + 迁移历史</text>
+  <text x="60" y="611" class="small">失败回滚；通过后 COMMIT</text>
+  <rect x="400" y="470" width="300" height="170" rx="14" class="box"/>
+  <text x="420" y="506" class="heading">② 一致性备份</text>
+  <text x="420" y="542" class="body">第二个只读连接创建快照</text>
+  <text x="420" y="573" class="body">包含已提交的 WAL 数据</text>
+  <text x="420" y="611" class="small">原库修改前完成；升级后保留</text>
+  <rect x="760" y="470" width="390" height="170" rx="14" class="box"/>
+  <text x="780" y="506" class="heading">③ 演练副本</text>
+  <text x="780" y="542" class="body">使用同一份不可变迁移 SQL</text>
+  <text x="780" y="573" class="body">执行 + 外键检查 + quick_check</text>
+  <text x="780" y="611" class="small">通过后原库执行；失败时停止并报告</text>
+  <path d="M340 555H395" class="line"/>
+  <path d="M700 555H755" class="line"/>
+  <path d="M970 470V400H565V380" fill="none" stroke="#34d399" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#check)"/>
+  <text x="40" y="690" class="body">✓ 升级与历史原子提交     ✓ 失败保留原始数据     ✓ 重复执行成为无操作</text>
+  <text x="40" y="719" class="small">首版仅 SQLite / Node.js；自动规划受模型边界限制，高级结构使用经过审阅的 SQL。</text>
+</svg>

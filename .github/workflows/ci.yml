@@ -1,0 +1,24 @@
+name: MoonMolt
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  sqlite:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: ['24.10.0', '26']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: hustcer/setup-moonbit@v1
+      - run: moon check --target js --deny-warn
+      - run: moon test --target js
+      - run: npm run build
+      - run: npm test
+      - run: npm run demo
+      - run: npm pack --dry-run

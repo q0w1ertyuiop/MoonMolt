@@ -1,0 +1,12 @@
+{
+  "version": "2",
+  "views": [],
+  "tables": [{
+    "name": "users",
+    "columns": [
+      {"name": "id", "data_type": "INTEGER", "nullable": false, "primary_key": true, "unique": false},
+      {"name": "name", "data_type": "TEXT", "nullable": false, "primary_key": false, "unique": false, "default_value": "'unknown'"}
+    ],
+    "indexes": [], "foreign_keys": [], "checks": [], "triggers": []
+  }]
+}

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">MoonMolt · 月蜕</title>
+  <desc id="desc">A crescent moon surrounds a database, with an outer ring opening to represent migration.</desc>
+  <rect width="128" height="128" rx="28" fill="#111b32"/>
+  <path d="M91 17A48 48 0 1 0 108 90A43 43 0 0 1 91 17Z" fill="#a5b4fc"/>
+  <path d="M40 50V88C40 102 100 102 100 88V50Z" fill="#172b47" stroke="#67e8f9" stroke-width="3"/>
+  <ellipse cx="70" cy="50" rx="30" ry="10" fill="#244461" stroke="#67e8f9" stroke-width="3"/>
+  <path d="M40 68C40 82 100 82 100 68M40 85C40 99 100 99 100 85" fill="none" stroke="#67e8f9" stroke-width="3"/>
+  <path d="M103 43C120 54 119 78 107 88" fill="none" stroke="#fbbf24" stroke-width="3" stroke-linecap="round"/>
+  <path d="M103 43L104 33M103 43L113 43" fill="none" stroke="#fbbf24" stroke-width="3" stroke-linecap="round"/>
+</svg>

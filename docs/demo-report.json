@@ -1,0 +1,59 @@
+{
+  "generated_at": "2026-10-11T03:51:13.525Z",
+  "node": "v26.2.0",
+  "sqlite": "3.53.1",
+  "command": "npm run build && npm run demo",
+  "seed": "deterministic fixture; no random data",
+  "before": [
+    {
+      "id": 101,
+      "user_id": 7,
+      "amount_cents": 2599
+    },
+    {
+      "id": 102,
+      "user_id": 12,
+      "amount_cents": 5000
+    }
+  ],
+  "after": [
+    {
+      "id": 101,
+      "user_id": 7,
+      "amount_cents": 2599,
+      "status": "paid"
+    },
+    {
+      "id": 102,
+      "user_id": 12,
+      "amount_cents": 5000,
+      "status": "paid"
+    }
+  ],
+  "users": [
+    {
+      "id": 7,
+      "name": "王正"
+    },
+    {
+      "id": 12,
+      "name": "MoonBit"
+    }
+  ],
+  "rehearsed_without_modifying_source": true,
+  "applied_versions": [
+    1,
+    2,
+    3
+  ],
+  "failure": {
+    "kind": "database",
+    "stage": "rehearse",
+    "original_data_preserved": true
+  },
+  "repeat_noop": true,
+  "foreign_key_violations": 0,
+  "backups_created": 3,
+  "first_upgrade_ms": 1,
+  "rebuild_ms": 2
+}
