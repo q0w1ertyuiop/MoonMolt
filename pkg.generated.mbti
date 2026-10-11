@@ -1,0 +1,87 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonmolt/moonmolt"
+
+import {
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn complete(&Driver, Prepared) -> Json raise MigrationError
+
+pub fn error_json(MigrationError) -> Json
+
+pub fn inspect(&Driver, String) -> Json raise MigrationError
+
+pub fn load_migrations(Array[MigrationSource]) -> Array[Migration] raise MigrationError
+
+pub fn pending_migrations(Array[Migration], Array[HistoryEntry], Int?) -> Array[Migration] raise MigrationError
+
+pub fn plan(Json, Json, Json?, Bool) -> Json raise MigrationError
+
+pub fn prepare(&Driver, Request) -> Prepared raise MigrationError
+
+pub fn status(&Driver, Array[Migration], String, Int?) -> Json raise MigrationError
+
+pub fn unwrap_rendered_sql(Array[String]) -> String raise MigrationError
+
+pub fn validate_history(Array[Migration], Array[HistoryEntry]) -> Unit raise MigrationError
+
+// Errors
+pub(all) suberror MigrationError {
+  Input(String)
+  HistoryMismatch(String)
+  Policy(String)
+  Database(String)
+  LockTimeout(String)
+  CommitOutcomeUnknown(String)
+} derive(@debug.Debug)
+
+// Types and methods
+pub(all) struct HistoryEntry {
+  version : Int
+  name : String
+  checksum : String
+  applied_at : String
+  duration_ms : Int
+  schema_before : String
+  schema_after : String
+  tool_version : String
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+
+pub(all) struct Migration {
+  version : Int
+  name : String
+  filename : String
+  checksum : String
+  sql : String
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+
+pub(all) struct MigrationSource {
+  filename : String
+  checksum : String
+  sql : String
+} derive(ToJson, @debug.Debug, @json.FromJson)
+
+pub(all) struct Prepared {
+  request : Request
+  pending : Array[Migration]
+  backup_required : Bool
+  report : Json
+} derive(ToJson, @debug.Debug, @json.FromJson)
+
+pub(all) struct Request {
+  command : String
+  db : String
+  dir : String
+  rebuild : Bool
+  create : Bool
+  to : Int?
+} derive(ToJson, @debug.Debug, @json.FromJson)
+
+// Type aliases
+
+// Traits
+pub(open) trait Driver {
+  fn call(Self, String, Json) -> Json raise MigrationError
+}

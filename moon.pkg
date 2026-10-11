@@ -1,0 +1,8 @@
+import {
+  "moonbitlang/core/json",
+  "kath61105/moon_schema_plan" @schema,
+}
+
+import {
+  "moonbitlang/core/test",
+} for "test"

@@ -1,0 +1,15 @@
+import {
+  "moonmolt/moonmolt" @core,
+  "moonbitlang/core/json",
+}
+
+supported_targets = "js"
+
+options(
+  link: {
+    "js": {
+      "exports": [ "prepare_json", "complete_json", "plan_json" ],
+      "format": "esm",
+    },
+  },
+)
