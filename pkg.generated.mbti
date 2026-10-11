@@ -44,7 +44,7 @@ pub(all) struct HistoryEntry {
   name : String
   checksum : String
   applied_at : String
-  duration_ms : Int
+  duration_ms : Int64
   schema_before : String
   schema_after : String
   tool_version : String

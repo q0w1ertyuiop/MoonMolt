@@ -45,9 +45,9 @@ try {
     applied_versions: rows('SELECT version FROM __moonmigrate_history').map(r => r.version),
     failure: { kind: expectedFailure.kind, stage: expectedFailure.stage, original_data_preserved: true },
     repeat_noop: repeat.noop, foreign_key_violations: 0,
-    backups_created: 3,
-    first_upgrade_ms: first.result.applied.reduce((n, m) => n + m.duration_ms, 0),
-    rebuild_ms: upgrade.result.applied.reduce((n, m) => n + m.duration_ms, 0),
+    backups_created: readdirSync(`${db}.moonmolt-backups`).filter(name => name.endsWith('.sqlite')).length,
+    first_upgrade_ms: first.result.applied.reduce((n, m) => n + Number(m.duration_ms), 0),
+    rebuild_ms: upgrade.result.applied.reduce((n, m) => n + Number(m.duration_ms), 0),
   };
   if (process.argv.includes('--save-report')) writeFileSync(new URL('../docs/demo-report.json', import.meta.url), JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify(report, null, 2));

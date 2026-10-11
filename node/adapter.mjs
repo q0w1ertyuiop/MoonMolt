@@ -25,6 +25,7 @@ export class Adapter {
   clonePath = null;
   sourcePath = null;
   persistentBackup = false;
+  backupComplete = false;
   stage = 'prepare';
 
   constructor() {
@@ -76,7 +77,7 @@ export class Adapter {
     if (!this.query(id, 'SELECT name FROM sqlite_schema WHERE name=?', HISTORY).length) return [];
     const ddl = this.query(id, 'SELECT sql FROM sqlite_schema WHERE name=?', HISTORY)[0].sql;
     if (!ddl || !this.query(id, `PRAGMA table_info(${quote(HISTORY)})`).some(c => c.name === 'version' && c.pk === 1)) throw failure('policy', 'invalid migration history table');
-    return this.query(id, `SELECT version,name,checksum,applied_at,duration_ms,schema_before,schema_after,tool_version FROM ${quote(HISTORY)} ORDER BY version`);
+    return this.query(id, `SELECT version,name,checksum,applied_at,CAST(duration_ms AS TEXT) AS duration_ms,schema_before,schema_after,tool_version FROM ${quote(HISTORY)} ORDER BY version`);
   }
 
   script(id, sql, filename) {
@@ -120,7 +121,7 @@ export class Adapter {
       case 'exec_script': this.stage = a.id === 'source' ? 'apply' : 'rehearse'; this.script(a.id, a.sql, a.filename); return null;
       case 'history_insert': {
         const e = a.entry;
-        this.db(a.id).prepare(`INSERT INTO ${quote(HISTORY)} VALUES (?,?,?,?,?,?,?,?)`).run(e.version, e.name, e.checksum, e.applied_at, e.duration_ms, e.schema_before, e.schema_after, e.tool_version);
+        this.db(a.id).prepare(`INSERT INTO ${quote(HISTORY)} VALUES (?,?,?,?,?,?,?,?)`).run(e.version, e.name, e.checksum, e.applied_at, BigInt(e.duration_ms), e.schema_before, e.schema_after, e.tool_version);
         return null;
       }
       case 'validate': {
@@ -140,7 +141,7 @@ export class Adapter {
         return null;
       }
       case 'close': this.close(a.id); return null;
-      case 'clock': return Math.floor(performance.now());
+      case 'clock': return String(Math.floor(performance.now()));
       case 'timestamp': return new Date().toISOString();
       default: throw failure('input', `unknown host operation ${op}`);
     }
@@ -165,7 +166,7 @@ export class Adapter {
       this.backupPath = join(folder, `${new Date().toISOString().replaceAll(':', '-')}-${randomUUID()}.sqlite`);
     } else this.backupPath = join(this.temp, 'before.sqlite');
     const reader = new DatabaseSync(this.sourcePath, { readOnly: true });
-    try { await backup(reader, this.backupPath); }
+    try { await backup(reader, this.backupPath); this.backupComplete = true; }
     finally { reader.close(); }
     this.clonePath = join(this.temp, 'rehearsal.sqlite');
     copyFileSync(this.backupPath, this.clonePath);

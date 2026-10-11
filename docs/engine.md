@@ -25,6 +25,8 @@ Fingerprinting excludes SQLite-owned objects and the migration history table; it
 
 History columns are `version` (integer primary key), `name`, `checksum`, `applied_at`, `duration_ms`, `schema_before`, `schema_after`, and `tool_version`. Its name is `__moonmigrate_history`. Checksums and fingerprints detect accidental drift; they are not signatures against a malicious actor with database write access.
 
+The MoonBit JSON codec represents `Int64` as a decimal string. Clock values and the `duration_ms` report field therefore use strings at the transport boundary; the adapter binds durations as SQLite integer values through JavaScript BigInt.
+
 Reports include `ok`, a command/result or failure `kind`/`message`/`exit_code`, execution stage, and persistent backup/report paths when available. Exit categories are 0 success, 1 input/database/runtime, 2 history/policy and 3 lock timeout. On uncertain COMMIT outcome, inspect the history through a fresh invocation before deciding whether another forward migration is needed.
 
 Planning accepts the pinned upstream JSON format. Table arrays `columns`, `indexes`, `foreign_keys`, `checks`, `triggers`, and root `views` must be present; absent optional defaults/actions or JSON null are supported. Rename hints use `{"tables":[["old","new"]],"columns":[["target_table","old","new"]]}`. SQL expressions for defaults are trusted author input, not untrusted user input.

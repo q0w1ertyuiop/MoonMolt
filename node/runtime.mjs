@@ -40,7 +40,8 @@ async function execute(input) {
   if (adapter) {
     report.stage = adapter.stage;
     if (request.command === 'apply' && adapter.backupPath) {
-      report.backup = adapter.backupPath;
+      if (adapter.backupComplete) report.backup = adapter.backupPath;
+      else report.incomplete_backup = adapter.backupPath;
       try { report.report_path = adapter.saveReport(report); }
       catch (error) { report.report_warning = error.message; }
     }

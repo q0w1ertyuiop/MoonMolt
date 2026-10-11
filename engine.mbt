@@ -1,7 +1,7 @@
 ///|
 fn[T : @json.FromJson] decode(value : Json) -> T raise MigrationError {
   @json.from_json(value) catch {
-    _ => raise Database("host returned an invalid operation result")
+    e => raise Database("host returned an invalid operation result: \{e}")
   }
 }
 
@@ -121,7 +121,7 @@ fn apply_batch(
     let before : String = decode(
       driver.call("fingerprint", { "id": id.to_json() }),
     )
-    let start : Int = decode(driver.call("clock", {}))
+    let start : Int64 = decode(driver.call("clock", {}))
     ignore(
       driver.call("exec_script", {
         "id": id.to_json(),
@@ -132,7 +132,7 @@ fn apply_batch(
     let after : String = decode(
       driver.call("fingerprint", { "id": id.to_json() }),
     )
-    let finish : Int = decode(driver.call("clock", {}))
+    let finish : Int64 = decode(driver.call("clock", {}))
     let stamp : String = decode(driver.call("timestamp", {}))
     let entry : HistoryEntry = {
       version: migration.version,

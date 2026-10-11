@@ -103,3 +103,30 @@ test('unsupported schema fields fail closed instead of silently losing objects',
     assert.equal(result.kind, 'policy');
   }
 });
+
+test('SQL and checksum remain immutable when a file changes during backup', async t => {
+  const f = fixture(t);
+  const backup = Adapter.prototype.makeBackup;
+  Adapter.prototype.makeBackup = async function(command) {
+    writeFileSync(join(f.dir, '000001_upgrade.sql'), 'DROP TABLE t;');
+    return backup.call(this, command);
+  };
+  let report;
+  try { report = await run({ command: 'apply', ...f }); }
+  finally { Adapter.prototype.makeBackup = backup; }
+  assert.equal(report.ok, true, JSON.stringify(report));
+  assert.equal(check(f.db).rows[0].value, 11);
+  assert.equal((await run({ command: 'status', ...f })).kind, 'history_mismatch');
+});
+
+test('clock timestamps beyond signed 32-bit uptime remain supported', async t => {
+  const f = fixture(t);
+  const original = Adapter.prototype.dispatch;
+  let clock = 2147483648;
+  Adapter.prototype.dispatch = function(op, args) { return op === 'clock' ? String(clock++) : original.call(this, op, args); };
+  let report;
+  try { report = await run({ command: 'apply', ...f }); }
+  finally { Adapter.prototype.dispatch = original; }
+  assert.equal(report.ok, true, JSON.stringify(report));
+  assert.equal(report.result.applied[0].duration_ms, '1');
+});

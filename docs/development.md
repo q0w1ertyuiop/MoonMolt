@@ -39,3 +39,9 @@ The shop demo has now run end to end: order IDs, user references and monetary am
 The SVG architecture and logo were rendered locally and visually checked. The npm archive includes the compiled MoonBit engine, the host adapter and documentation, without source build caches or local files. An installation smoke check will verify the archive can run without MoonBit installed in the consumer project.
 
 The initially assumed `moonbitlang/setup-moonbit` Action could not be found. CI uses the documented `hustcer/setup-moonbit` Action instead and tests the minimum supported Node.js version, 24.10.0, alongside Node.js 26.
+
+Final lifecycle checks cover editing a migration file during backup: both execution stages still use the originally loaded SQL, and the next invocation detects the file change. Clock timestamps and durations use 64-bit values so a long-running application is not limited by signed 32-bit millisecond uptime. Backup reports distinguish a completed snapshot from an incomplete backup attempt.
+
+The first 64-bit timing change exposed another codec boundary: MoonBit expects decimal strings for Int64 JSON, while the host was returning numbers. Clock and duration transports now consistently use decimal strings; SQLite receives bound BigInt values. All 18 integration cases passed on both Windows Node.js 24.10.0 and 26.2.0 after this correction. The four MoonBit tests and warning-free type/build checks passed as well.
+
+The packed archive was installed in an independent consumer directory with lifecycle scripts disabled. Its CLI ran, and its library created, migrated and inspected a database using the included compiled engine. No MoonBit source or build step was needed in that consumer directory.
