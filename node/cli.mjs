@@ -8,6 +8,7 @@ moonmolt inspect --db app.db [--format json]
 moonmolt status --db app.db --dir migrations [--to 3]
 moonmolt rehearse --db app.db --dir migrations [--rebuild]
 moonmolt apply --db app.db --dir migrations [--to 3] [--rebuild] [--create]
+              [--backup-dir backups] [--busy-timeout-ms 5000]
 moonmolt plan --before v1.json --after v2.json [--hints renames.json]
               [--allow-destructive] [--out upgrade.sql] [--format json]
 
@@ -21,7 +22,7 @@ function parse(argv) {
   if (!['inspect', 'status', 'rehearse', 'apply', 'plan'].includes(command)) throw new Error(`unknown command: ${command}`);
   const result = { command, format: 'text' };
   const bools = new Set(['--rebuild', '--create', '--allow-destructive']);
-  const values = new Set(['--db', '--dir', '--to', '--format', '--before', '--after', '--hints', '--out']);
+  const values = new Set(['--db', '--dir', '--to', '--format', '--before', '--after', '--hints', '--out', '--backup-dir', '--busy-timeout-ms']);
   const seen = new Set();
   while (argv.length) {
     const option = argv.shift();
@@ -30,17 +31,21 @@ function parse(argv) {
     if (bools.has(option)) result[option.slice(2).replaceAll('-', '_')] = true;
     else if (values.has(option)) {
       if (!argv.length || argv[0].startsWith('--')) throw new Error(`missing value: ${option}`);
-      result[option.slice(2)] = argv.shift();
+      result[option.slice(2).replaceAll('-', '_')] = argv.shift();
     } else throw new Error(`unknown option: ${option}`);
   }
   if (!['text', 'json'].includes(result.format)) throw new Error('--format must be text or json');
-  const allowed = command === 'plan' ? new Set(['command', 'format', 'before', 'after', 'hints', 'out', 'allow_destructive']) : new Set(['command', 'format', 'db', 'dir', 'to', 'rebuild', 'create']);
+  const allowed = command === 'plan' ? new Set(['command', 'format', 'before', 'after', 'hints', 'out', 'allow_destructive']) : command === 'inspect' ? new Set(['command', 'format', 'db', 'busy_timeout_ms']) : new Set(['command', 'format', 'db', 'dir', 'to', 'rebuild', 'create', 'busy_timeout_ms', ...(command === 'apply' ? ['backup_dir'] : [])]);
   for (const key of Object.keys(result)) if (!allowed.has(key)) throw new Error(`${key} does not apply to ${command}`);
   if (command === 'plan') { if (!result.before || !result.after) throw new Error('plan requires --before and --after'); }
   else {
     if (!result.db) throw new Error(`${command} requires --db`);
     if (command !== 'inspect' && !result.dir) throw new Error(`${command} requires --dir`);
     if (result.create && command !== 'apply') throw new Error('--create only applies to apply');
+    if (result.busy_timeout_ms !== undefined) {
+      if (!/^\d+$/.test(result.busy_timeout_ms)) throw new Error('--busy-timeout-ms must be a nonnegative integer');
+      result.busy_timeout_ms = Number(result.busy_timeout_ms);
+    }
     if (result.to !== undefined) {
       if (!/^[1-9]\d{0,5}$/.test(result.to)) throw new Error('--to must be a positive six-digit-or-smaller version');
       result.to = Number(result.to);

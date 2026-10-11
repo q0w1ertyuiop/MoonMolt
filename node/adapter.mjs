@@ -6,6 +6,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 
 export const HISTORY = '__moonmigrate_history';
+const HISTORY_DDL = `CREATE TABLE "${HISTORY}" (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL, duration_ms INTEGER NOT NULL, schema_before TEXT NOT NULL, schema_after TEXT NOT NULL, tool_version TEXT NOT NULL)`;
 const hash = data => createHash('sha256').update(data).digest('hex');
 const quote = name => '"' + name.replaceAll('"', '""') + '"';
 const failure = (kind, message) => Object.assign(new Error(message), { kind });
@@ -28,7 +29,10 @@ export class Adapter {
   backupComplete = false;
   stage = 'prepare';
 
-  constructor() {
+  constructor({ busy_timeout_ms = 5000, backup_dir } = {}) {
+    if (!Number.isInteger(busy_timeout_ms) || busy_timeout_ms < 0 || busy_timeout_ms > 2147483647) throw failure('input', 'invalid busy_timeout_ms');
+    this.busyTimeout = busy_timeout_ms;
+    this.backupDir = backup_dir;
     const [major, minor] = process.versions.node.split('.').map(Number);
     if (major < 24 || (major === 24 && minor < 10)) throw failure('input', 'MoonMolt requires Node.js >=24.10.0');
     if (typeof DatabaseSync.prototype.setAuthorizer !== 'function' || typeof backup !== 'function') throw failure('input', 'node:sqlite authorizer and backup APIs are required');
@@ -53,7 +57,7 @@ export class Adapter {
     if (existsSync(path)) path = realpathSync(path);
     const db = new DatabaseSync(path, { readOnly: read_only, allowExtension: false });
     this.connections.set(id, { db, path, read_only });
-    db.exec('PRAGMA busy_timeout=5000;');
+    db.exec(`PRAGMA busy_timeout=${this.busyTimeout};`);
     db.exec(`PRAGMA foreign_keys=${rebuild ? 'OFF' : 'ON'};`);
     db.exec('PRAGMA trusted_schema=OFF;');
     const mode = this.query(id, 'PRAGMA journal_mode')[0].journal_mode;
@@ -74,10 +78,23 @@ export class Adapter {
   }
 
   history(id) {
-    if (!this.query(id, 'SELECT name FROM sqlite_schema WHERE name=?', HISTORY).length) return [];
-    const ddl = this.query(id, 'SELECT sql FROM sqlite_schema WHERE name=?', HISTORY)[0].sql;
-    if (!ddl || !this.query(id, `PRAGMA table_info(${quote(HISTORY)})`).some(c => c.name === 'version' && c.pk === 1)) throw failure('policy', 'invalid migration history table');
+    const objects = this.query(id, 'SELECT type,name,sql FROM main.sqlite_schema WHERE name=? COLLATE NOCASE OR tbl_name=? COLLATE NOCASE', HISTORY, HISTORY);
+    if (!objects.length) return [];
+    if (objects.length !== 1 || objects[0].type !== 'table' || objects[0].name !== HISTORY || objects[0].sql?.replace(/\s+/g, ' ').trim() !== HISTORY_DDL) {
+      throw failure('policy', 'invalid migration history table: expected engine-owned schema without triggers or additional indexes');
+    }
     return this.query(id, `SELECT version,name,checksum,applied_at,CAST(duration_ms AS TEXT) AS duration_ms,schema_before,schema_after,tool_version FROM ${quote(HISTORY)} ORDER BY version`);
+  }
+
+  sequences(id) {
+    const tables = this.query(id, "SELECT name FROM main.sqlite_schema WHERE type='table' AND substr(name,1,7)<>'sqlite_' AND name<>? ORDER BY name", HISTORY);
+    const exists = this.query(id, "SELECT name FROM main.sqlite_schema WHERE name='sqlite_sequence'").length;
+    const sequences = exists ? this.query(id, 'SELECT name,CAST(seq AS TEXT) AS seq FROM main.sqlite_sequence') : [];
+    return tables.map(table => {
+      const entries = sequences.filter(row => row.name === table.name);
+      if (entries.length > 1) throw failure('policy', `duplicate sqlite_sequence entries for ${table.name}`);
+      return entries.length && entries[0].seq !== null ? { name: table.name, seq: entries[0].seq } : table;
+    });
   }
 
   script(id, sql, filename) {
@@ -114,10 +131,12 @@ export class Adapter {
       case 'open': return this.open(a);
       case 'open_clone': this.stage = 'rehearse'; return this.open({ id: 'clone', path: this.clonePath, rebuild: a.rebuild });
       case 'begin': this.db(a.id).exec('BEGIN IMMEDIATE;'); return null;
+      case 'begin_read': this.db(a.id).exec('BEGIN;'); return null;
       case 'history': return this.history(a.id);
+      case 'sequences': return this.sequences(a.id);
       case 'inspect': return this.inspect(a.id);
       case 'fingerprint': return this.inspect(a.id).fingerprint;
-      case 'history_init': this.db(a.id).exec(`CREATE TABLE IF NOT EXISTS ${quote(HISTORY)} (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL, duration_ms INTEGER NOT NULL, schema_before TEXT NOT NULL, schema_after TEXT NOT NULL, tool_version TEXT NOT NULL);`); return null;
+      case 'history_init': this.history(a.id); this.db(a.id).exec(HISTORY_DDL.replace('CREATE TABLE ', 'CREATE TABLE IF NOT EXISTS ') + ';'); return null;
       case 'exec_script': this.stage = a.id === 'source' ? 'apply' : 'rehearse'; this.script(a.id, a.sql, a.filename); return null;
       case 'history_insert': {
         const e = a.entry;
@@ -161,7 +180,7 @@ export class Adapter {
     this.temp = mkdtempSync(join(tmpdir(), 'moonmolt-'));
     if (command === 'apply') {
       this.persistentBackup = true;
-      const folder = `${this.sourcePath}.moonmolt-backups`;
+      const folder = this.backupDir ?? `${this.sourcePath}.moonmolt-backups`;
       mkdirSync(folder, { recursive: true });
       this.backupPath = join(folder, `${new Date().toISOString().replaceAll(':', '-')}-${randomUUID()}.sqlite`);
     } else this.backupPath = join(this.temp, 'before.sqlite');

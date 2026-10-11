@@ -59,6 +59,16 @@ pub fn validate_history(
   for i in 0..<history.length() {
     let applied = history[i]
     let candidate = migrations[i]
+    guard applied.duration_ms >= 0 else {
+      raise HistoryMismatch("negative duration in migration \{applied.version}")
+    }
+    if i > 0 {
+      guard history[i - 1].schema_after == applied.schema_before else {
+        raise HistoryMismatch(
+          "broken schema fingerprint chain at migration \{applied.version}",
+        )
+      }
+    }
     guard applied.version == candidate.version &&
       applied.name == candidate.name &&
       applied.checksum == candidate.checksum else {

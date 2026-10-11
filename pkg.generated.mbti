@@ -83,6 +83,7 @@ pub(all) struct Prepared {
   backup_required : Bool
   report : Json
   fingerprint : String
+  history : Array[HistoryEntry]
 } derive(ToJson, @debug.Debug, @json.FromJson)
 pub fn Prepared::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
 pub fn Prepared::to_json(Self) -> Json

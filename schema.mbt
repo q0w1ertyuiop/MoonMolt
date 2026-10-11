@@ -92,8 +92,8 @@ fn ensure_supported(schema : @schema.Schema) -> Unit raise MigrationError {
         "automatic plans do not support CHECK constraints or triggers in \{table.name}",
       )
     }
-    guard !table.name.has_prefix("__moonmigrate_") &&
-      !table.name.has_prefix("sqlite_") else {
+    guard !table.name.to_lower().has_prefix("__moonmigrate_") &&
+      !table.name.to_lower().has_prefix("sqlite_") else {
       raise Policy("reserved table name \{table.name}")
     }
   }

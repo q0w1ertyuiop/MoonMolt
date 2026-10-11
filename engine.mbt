@@ -76,6 +76,11 @@ pub fn prepare(
       "rebuild": request.rebuild.to_json(),
     }),
   )
+  if request.command == "apply" {
+    ignore(driver.call("begin", { "id": "source" }))
+  } else {
+    ignore(driver.call("begin_read", { "id": "source" }))
+  }
   if request.command == "inspect" {
     return {
       request,
@@ -83,10 +88,8 @@ pub fn prepare(
       backup_required: false,
       report: { "ok": true, "snapshot": inspect(driver, "source").to_json() },
       fingerprint: "",
+      history: [],
     }
-  }
-  if request.command == "apply" {
-    ignore(driver.call("begin", { "id": "source" }))
   }
   let history : Array[HistoryEntry] = decode(
     driver.call("history", { "id": "source" }),
@@ -100,12 +103,19 @@ pub fn prepare(
     "pending": pending.map(m => m.filename).to_json(),
     "noop": pending.is_empty().to_json(),
   }
+  let fingerprint : String = decode(
+    driver.call("fingerprint", { "id": "source" }),
+  )
+  if request.command == "rehearse" {
+    ignore(driver.call("close", { "id": "source" }))
+  }
   {
     request,
     pending,
     backup_required: request.command != "status" && !pending.is_empty(),
     report,
-    fingerprint: decode(driver.call("fingerprint", { "id": "source" })),
+    fingerprint,
+    history,
   }
 }
 
@@ -118,6 +128,9 @@ fn apply_batch(
   ignore(driver.call("history_init", { "id": id.to_json() }))
   let applied : Array[HistoryEntry] = []
   for migration in migrations {
+    let sequences : Array[SequenceState] = decode(
+      driver.call("sequences", { "id": id.to_json() }),
+    )
     let before : String = decode(
       driver.call("fingerprint", { "id": id.to_json() }),
     )
@@ -129,6 +142,25 @@ fn apply_batch(
         "filename": migration.filename.to_json(),
       }),
     )
+    let updated : Array[SequenceState] = decode(
+      driver.call("sequences", { "id": id.to_json() }),
+    )
+    for previous in sequences {
+      if previous.seq is Some(floor) {
+        for current in updated {
+          if current.name.to_lower() == previous.name.to_lower() {
+            guard (match current.seq {
+              Some(value) => value >= floor
+              None => false
+            }) else {
+              raise Policy(
+                "\{migration.filename}: AUTOINCREMENT high-water mark lost for \{previous.name}; preserve sqlite_sequence explicitly before inserting new rows",
+              )
+            }
+          }
+        }
+      }
+    }
     let after : String = decode(
       driver.call("fingerprint", { "id": id.to_json() }),
     )
@@ -175,6 +207,14 @@ pub fn complete(
   guard cloned == prepared.fingerprint else {
     raise HistoryMismatch(
       "database schema changed while preparing the rehearsal snapshot",
+    )
+  }
+  let cloned_history : Array[HistoryEntry] = decode(
+    driver.call("history", { "id": "clone" }),
+  )
+  guard cloned_history == prepared.history else {
+    raise HistoryMismatch(
+      "migration history changed while preparing the rehearsal snapshot",
     )
   }
   let rehearsal = apply_batch(driver, "clone", prepared.pending)

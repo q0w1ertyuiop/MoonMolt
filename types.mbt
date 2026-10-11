@@ -59,7 +59,14 @@ pub(all) struct Prepared {
   backup_required : Bool
   report : Json
   fingerprint : String
+  history : Array[HistoryEntry]
 } derive(Debug, ToJson, @json.FromJson)
+
+///|
+priv struct SequenceState {
+  name : String
+  seq : Int64?
+} derive(@json.FromJson)
 
 ///|
 pub(all) struct SchemaSnapshot {
