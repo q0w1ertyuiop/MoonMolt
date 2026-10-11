@@ -27,3 +27,15 @@ Passing the raw schema snapshot directly into the planning model would lose feat
 The rehearsal clone is checked against the fingerprint captured during preparation. This also detects a schema change between an advisory rehearsal and its backup.
 
 SQLite exceptions use Node error codes beginning with `ERR_`; a broad filesystem-style error classifier initially labeled them as input errors. SQLite's numeric error field now takes precedence so execution failures are reported as database errors.
+
+## Executing generated SQL through the guarded driver
+
+A generated rebuild passed the planner tests but initially failed at runtime: SQLite reports the read-only `pragma_foreign_key_check` table-valued function to the authorizer as a PRAGMA operation. The adapter now allows only this argument-free read, keeping configuration PRAGMAs blocked. A real database test executes the generated draft, checks its backfill and confirms that the retained foreign-key guard works inside the engine transaction.
+
+## Demonstration and distribution
+
+The shop demo has now run end to end: order IDs, user references and monetary amounts survive three upgrades; an intentionally broken later migration leaves the previously committed batch intact; repeating the completed upgrade is a no-op. The saved report comes from this run rather than an example output.
+
+The SVG architecture and logo were rendered locally and visually checked. The npm archive includes the compiled MoonBit engine, the host adapter and documentation, without source build caches or local files. An installation smoke check will verify the archive can run without MoonBit installed in the consumer project.
+
+The initially assumed `moonbitlang/setup-moonbit` Action could not be found. CI uses the documented `hustcer/setup-moonbit` Action instead and tests the minimum supported Node.js version, 24.10.0, alongside Node.js 26.

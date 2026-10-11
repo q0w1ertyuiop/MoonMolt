@@ -86,7 +86,10 @@ export class Adapter {
     const controls = new Set([C.SQLITE_TRANSACTION, C.SQLITE_SAVEPOINT, C.SQLITE_ATTACH, C.SQLITE_DETACH, C.SQLITE_PRAGMA]);
     db.setAuthorizer((action, a, b, database) => {
       const reserved = value => typeof value === 'string' && value.toLowerCase().startsWith('__moonmigrate_');
-      if (controls.has(action) || reserved(a) || reserved(b) || (database && !['main', 'temp'].includes(database))) {
+      // The upstream rebuild guard uses the pragma_foreign_key_check table-valued
+      // function. SQLite authorizes that read as SQLITE_PRAGMA as well.
+      const readOnlyForeignKeyCheck = action === C.SQLITE_PRAGMA && a?.toLowerCase() === 'foreign_key_check' && b == null;
+      if ((controls.has(action) && !readOnlyForeignKeyCheck) || reserved(a) || reserved(b) || (database && !['main', 'temp'].includes(database))) {
         denied = `disallowed operation ${action} on ${a ?? ''} ${b ?? ''}`;
         return C.SQLITE_DENY;
       }
