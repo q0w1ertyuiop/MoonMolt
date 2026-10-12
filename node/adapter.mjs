@@ -49,10 +49,11 @@ export class Adapter {
   backupComplete = false;
   stage = 'prepare';
 
-  constructor({ busy_timeout_ms = 5000, backup_dir } = {}) {
+  constructor({ busy_timeout_ms = 5000, backup_dir, onProgress = () => {} } = {}) {
     if (!Number.isInteger(busy_timeout_ms) || busy_timeout_ms < 0 || busy_timeout_ms > 2147483647) throw failure('input', 'invalid busy_timeout_ms');
     this.busyTimeout = busy_timeout_ms;
     this.backupDir = backup_dir;
+    this.onProgress = onProgress;
     const [major, minor] = process.versions.node.split('.').map(Number);
     if (major < 24 || (major === 24 && minor < 10)) throw failure('input', 'MoonMolt requires Node.js >=24.10.0');
     if (typeof DatabaseSync.prototype.setAuthorizer !== 'function' || typeof backup !== 'function') throw failure('input', 'node:sqlite authorizer and backup APIs are required');
@@ -238,8 +239,21 @@ export class Adapter {
   }
 
   call(op, json) {
-    try { return JSON.stringify({ ok: true, value: this.dispatch(op, JSON.parse(json)) }); }
+    let event;
+    try {
+      const args = JSON.parse(json);
+      if (op === 'open_clone') this.stage = 'rehearse';
+      if (op === 'exec_script') this.stage = args.id === 'source' ? 'apply' : 'rehearse';
+      if (['load', 'begin', 'open_clone', 'exec_script', 'exec_check', 'validate', 'commit'].includes(op)) {
+        event = { stage: this.stage, operation: op, ...(args.id ? { connection: args.id } : {}), ...(args.filename ? { filename: args.filename } : {}), ...(args.name ? { check_name: args.name } : {}) };
+        this.onProgress({ ...event, state: 'start' });
+      }
+      const value = this.dispatch(op, args);
+      if (event) this.onProgress({ ...event, state: 'complete' });
+      return JSON.stringify({ ok: true, value });
+    }
     catch (error) {
+      if (event) this.onProgress({ ...event, state: 'failed' });
       const busy = error.errcode === 5 || error.errcode === 6 || /database is (locked|busy)/i.test(error.message);
       const kind = error.kind ?? (busy ? 'lock_timeout' : error.errcode !== undefined ? 'database' : error instanceof TypeError || error.code?.startsWith('E') ? 'input' : 'database');
       return JSON.stringify({ ok: false, kind, message: error.message });
@@ -256,7 +270,14 @@ export class Adapter {
       this.backupPath = join(folder, `${new Date().toISOString().replaceAll(':', '-')}-${randomUUID()}.sqlite`);
     } else this.backupPath = join(this.temp, 'before.sqlite');
     const reader = new DatabaseSync(this.sourcePath, { readOnly: true });
-    try { await backup(reader, this.backupPath); this.backupComplete = true; }
+    this.onProgress({ stage: 'backup', operation: 'backup', state: 'start', backup: this.backupPath });
+    try {
+      await backup(reader, this.backupPath, { progress: ({ remainingPages, totalPages }) => {
+        this.onProgress({ stage: 'backup', operation: 'backup', state: 'progress', remaining_pages: remainingPages, total_pages: totalPages });
+      } });
+      this.backupComplete = true;
+      this.onProgress({ stage: 'backup', operation: 'backup', state: 'complete', backup: this.backupPath });
+    }
     finally { reader.close(); }
     this.clonePath = join(this.temp, 'rehearsal.sqlite');
     copyFileSync(this.backupPath, this.clonePath);

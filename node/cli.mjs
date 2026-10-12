@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync } from 'node:fs';
-import { run, plan } from './runtime.mjs';
+import { run, runInWorker, plan } from './runtime.mjs';
 
 const help = `MoonMolt · 月蜕 — 结构焕新，数据如初
 
@@ -8,7 +8,7 @@ moonmolt inspect --db app.db [--format json]
 moonmolt status --db app.db --dir migrations [--to 3]
 moonmolt rehearse --db app.db --dir migrations [--rebuild]
 moonmolt apply --db app.db --dir migrations [--to 3] [--rebuild] [--create]
-              [--backup-dir backups] [--busy-timeout-ms 5000]
+              [--backup-dir backups] [--busy-timeout-ms 5000] [--worker] [--progress]
 moonmolt plan --before v1.json --after v2.json [--hints renames.json]
               [--allow-destructive] [--out upgrade.sql] [--format json]
 
@@ -21,7 +21,7 @@ function parse(argv) {
   const command = argv.shift();
   if (!['inspect', 'status', 'rehearse', 'apply', 'plan'].includes(command)) throw new Error(`unknown command: ${command}`);
   const result = { command, format: 'text' };
-  const bools = new Set(['--rebuild', '--create', '--allow-destructive']);
+  const bools = new Set(['--rebuild', '--create', '--allow-destructive', '--worker', '--progress']);
   const values = new Set(['--db', '--dir', '--to', '--format', '--before', '--after', '--hints', '--out', '--backup-dir', '--busy-timeout-ms']);
   const seen = new Set();
   while (argv.length) {
@@ -36,6 +36,7 @@ function parse(argv) {
   }
   if (!['text', 'json'].includes(result.format)) throw new Error('--format must be text or json');
   const allowed = command === 'plan' ? new Set(['command', 'format', 'before', 'after', 'hints', 'out', 'allow_destructive']) : command === 'inspect' ? new Set(['command', 'format', 'db', 'busy_timeout_ms']) : new Set(['command', 'format', 'db', 'dir', 'to', 'rebuild', 'create', 'busy_timeout_ms', ...(command === 'apply' ? ['backup_dir'] : [])]);
+  if (command !== 'plan') { allowed.add('worker'); allowed.add('progress'); }
   for (const key of Object.keys(result)) if (!allowed.has(key)) throw new Error(`${key} does not apply to ${command}`);
   if (command === 'plan') { if (!result.before || !result.after) throw new Error('plan requires --before and --after'); }
   else {
@@ -75,7 +76,12 @@ try {
     const read = path => JSON.parse(readFileSync(path, 'utf8'));
     report = plan({ before: read(options.before), after: read(options.after), hints: options.hints ? read(options.hints) : undefined, allow_destructive: options.allow_destructive });
     if (report.ok && options.out) writeFileSync(options.out, report.sql, { flag: 'wx' });
-  } else report = await run(options);
+  } else {
+    const onProgress = options.progress ? event => {
+      console.error(format === 'json' ? JSON.stringify({ type: 'progress', ...event }) : `${event.stage}: ${event.operation} ${event.state}${event.filename ? ' ' + event.filename : ''}`);
+    } : undefined;
+    report = await (options.worker ? runInWorker : run)(options, { onProgress });
+  }
 } catch (error) { report = { ok: false, kind: 'input', exit_code: 1, message: error.message }; }
 console[report.ok ? 'log' : 'error'](format === 'json' ? JSON.stringify(report) : text(report));
 process.exitCode = report.ok ? 0 : report.exit_code ?? 1;

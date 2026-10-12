@@ -28,6 +28,7 @@ export interface BatchResult {
   checks: { version: number; filename: string; name: string; ok: true }[];
 }
 export interface ReportPaths {
+  progress_warnings?: string[];
   stage?: 'prepare' | 'backup' | 'rehearse' | 'apply';
   backup?: string;
   incomplete_backup?: string;
@@ -51,7 +52,27 @@ export interface Failure extends ReportPaths {
 }
 export type RunReport = RunSuccess | Failure;
 /** Captures values and resolves relative paths immediately; owns queued connection lifecycle. */
-export function run(request: RunRequest): Promise<RunReport>;
+export interface ProgressEvent {
+  stage: 'prepare' | 'backup' | 'rehearse' | 'apply';
+  operation: 'session' | 'load' | 'begin' | 'open_clone' | 'exec_script' | 'exec_check' | 'validate' | 'commit' | 'backup';
+  state: 'start' | 'progress' | 'complete' | 'failed';
+  sequence: number;
+  timestamp: string;
+  connection?: 'source' | 'clone';
+  filename?: string;
+  check_name?: string;
+  backup?: string;
+  remaining_pages?: number;
+  total_pages?: number;
+  ok?: boolean;
+}
+export interface RunOptions {
+  /** Synchronous observer; callback failures become bounded report warnings. */
+  onProgress?: (event: Readonly<ProgressEvent>) => void;
+}
+export function run(request: RunRequest, options?: RunOptions): Promise<RunReport>;
+/** One worker per call, with the same SQLite locks and migration policy. */
+export function runInWorker(request: RunRequest, options?: RunOptions): Promise<RunReport>;
 
 export interface SchemaColumn {
   name: string;
