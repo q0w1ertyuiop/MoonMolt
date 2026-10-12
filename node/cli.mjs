@@ -61,7 +61,8 @@ function text(report) {
   if (report.command === 'status') return `Applied: ${report.applied.length}\nPending: ${report.pending.join(', ') || 'none'}`;
   if (report.noop) return 'Database is up to date. No migration or backup created.';
   const applied = report.result?.applied ?? report.rehearsal?.applied ?? [];
-  return `${report.command === 'rehearse' ? 'Rehearsed' : 'Applied'} ${applied.length} migration(s): ${applied.map(m => m.version).join(', ')}${report.backup ? '\nBackup: ' + report.backup : ''}`;
+  const checks = report.result?.checks ?? report.rehearsal?.checks ?? [];
+  return `${report.command === 'rehearse' ? 'Rehearsed' : 'Applied'} ${applied.length} migration(s): ${applied.map(m => m.version).join(', ')}${checks.length ? '\nBusiness checks passed: ' + checks.length : ''}${report.backup ? '\nBackup: ' + report.backup : ''}`;
 }
 
 let report;

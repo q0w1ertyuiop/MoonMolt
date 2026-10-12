@@ -61,6 +61,7 @@ pub(all) struct Migration {
   filename : String
   checksum : String
   sql : String
+  checks : Array[MigrationCheck]?
 } derive(Eq, ToJson, @debug.Debug, @json.FromJson)
 pub fn Migration::equal(Self, Self) -> Bool
 pub fn Migration::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
@@ -68,10 +69,21 @@ pub fn Migration::not_equal(Self, Self) -> Bool
 pub fn Migration::to_json(Self) -> Json
 pub fn Migration::to_repr(Self) -> @debug.Repr
 
+pub(all) struct MigrationCheck {
+  name : String
+  sql : String
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+pub fn MigrationCheck::equal(Self, Self) -> Bool
+pub fn MigrationCheck::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn MigrationCheck::not_equal(Self, Self) -> Bool
+pub fn MigrationCheck::to_json(Self) -> Json
+pub fn MigrationCheck::to_repr(Self) -> @debug.Repr
+
 pub(all) struct MigrationSource {
   filename : String
   checksum : String
   sql : String
+  checks : Array[MigrationCheck]?
 } derive(ToJson, @debug.Debug, @json.FromJson)
 pub fn MigrationSource::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
 pub fn MigrationSource::to_json(Self) -> Json

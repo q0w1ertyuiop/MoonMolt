@@ -15,6 +15,13 @@ pub(all) struct Migration {
   filename : String
   checksum : String
   sql : String
+  checks : Array[MigrationCheck]?
+} derive(Debug, Eq, ToJson, @json.FromJson)
+
+///|
+pub(all) struct MigrationCheck {
+  name : String
+  sql : String
 } derive(Debug, Eq, ToJson, @json.FromJson)
 
 ///|
@@ -34,6 +41,7 @@ pub(all) struct MigrationSource {
   filename : String
   checksum : String
   sql : String
+  checks : Array[MigrationCheck]?
 } derive(Debug, ToJson, @json.FromJson)
 
 ///|

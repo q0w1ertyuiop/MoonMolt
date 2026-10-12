@@ -127,6 +127,7 @@ fn apply_batch(
 ) -> Json raise MigrationError {
   ignore(driver.call("history_init", { "id": id.to_json() }))
   let applied : Array[HistoryEntry] = []
+  let verified : Array[Json] = []
   for migration in migrations {
     let sequences : Array[SequenceState] = decode(
       driver.call("sequences", { "id": id.to_json() }),
@@ -161,6 +162,24 @@ fn apply_batch(
         }
       }
     }
+    if migration.checks is Some(checks) {
+      for check in checks {
+        ignore(
+          driver.call("exec_check", {
+            "id": id.to_json(),
+            "sql": check.sql.to_json(),
+            "name": check.name.to_json(),
+            "filename": migration.filename.to_json(),
+          }),
+        )
+        verified.push({
+          "version": migration.version.to_json(),
+          "filename": migration.filename.to_json(),
+          "name": check.name.to_json(),
+          "ok": true,
+        })
+      }
+    }
     let after : String = decode(
       driver.call("fingerprint", { "id": id.to_json() }),
     )
@@ -174,7 +193,7 @@ fn apply_batch(
       duration_ms: finish - start,
       schema_before: before,
       schema_after: after,
-      tool_version: "0.1.0",
+      tool_version: "0.2.0",
     }
     ignore(
       driver.call("history_insert", {
@@ -186,7 +205,11 @@ fn apply_batch(
   }
   ignore(driver.call("validate", { "id": id.to_json() }))
   let fingerprint = driver.call("fingerprint", { "id": id.to_json() })
-  { "applied": applied.to_json(), "fingerprint": fingerprint }
+  {
+    "applied": applied.to_json(),
+    "fingerprint": fingerprint,
+    "checks": verified.to_json(),
+  }
 }
 
 ///|

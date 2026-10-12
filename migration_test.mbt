@@ -4,7 +4,7 @@ fn source(
   checksum? : String = "sha",
   sql? : String = "SELECT 1;",
 ) -> @moonmolt.MigrationSource {
-  { filename, checksum, sql, }
+  { filename, checksum, sql, checks: None, }
 }
 
 ///|
@@ -83,5 +83,26 @@ test "renderer wrappers are removed precisely, not by semicolons" {
     _ => ()
   } noraise {
     _ => fail("incomplete wrapper must fail")
+  }
+}
+
+///|
+test "optional business checks preserve SQL-only inputs and reject duplicate names" {
+  let original = source("000001_first.sql")
+  @test.assert_eq(@moonmolt.load_migrations([original])[0].checks, None)
+  let check : @moonmolt.MigrationCheck = {
+    name: "rows intact",
+    sql: "SELECT 1;",
+  }
+  let checked = { ..original, checks: Some([check]), }
+  @test.assert_eq(@moonmolt.load_migrations([checked])[0].checks, Some([check]))
+  for checks in [[], [check, check]] {
+    try
+      @moonmolt.load_migrations([{ ..original, checks: Some(checks), }])
+    catch {
+      _ => ()
+    } noraise {
+      _ => fail("invalid business checks must fail")
+    }
   }
 }

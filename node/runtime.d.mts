@@ -22,7 +22,11 @@ export interface HistoryEntry {
   schema_after: string;
   tool_version: string;
 }
-export interface BatchResult { applied: HistoryEntry[]; fingerprint: string }
+export interface BatchResult {
+  applied: HistoryEntry[];
+  fingerprint: string;
+  checks: { version: number; filename: string; name: string; ok: true }[];
+}
 export interface ReportPaths {
   stage?: 'prepare' | 'backup' | 'rehearse' | 'apply';
   backup?: string;

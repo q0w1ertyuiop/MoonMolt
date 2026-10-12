@@ -30,12 +30,27 @@ pub fn load_migrations(
         )
       }
     }
+    if source.checks is Some(checks) {
+      guard !checks.is_empty() else {
+        raise Input("empty business checks in \{file}")
+      }
+      let names : Array[String] = []
+      for check in checks {
+        guard check.name.length() > 0 &&
+          check.sql.length() > 0 &&
+          !names.contains(check.name) else {
+          raise Input("invalid or duplicate business check in \{file}")
+        }
+        names.push(check.name)
+      }
+    }
     migrations.push({
       version,
       name,
       filename: file,
       checksum: source.checksum,
       sql: source.sql,
+      checks: source.checks,
     })
   }
   migrations.sort_by((a, b) => a.version - b.version)

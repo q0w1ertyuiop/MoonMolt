@@ -60,3 +60,15 @@ pub extend SchemaSnapshot with ToJson::{to_json}
 
 ///|
 pub extend SchemaSnapshot with @json.FromJson::{from_json}
+
+///|
+pub extend MigrationCheck with Debug::{to_repr}
+
+///|
+pub extend MigrationCheck with Eq::{equal, not_equal}
+
+///|
+pub extend MigrationCheck with ToJson::{to_json}
+
+///|
+pub extend MigrationCheck with @json.FromJson::{from_json}

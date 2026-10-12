@@ -1,5 +1,5 @@
 import { DatabaseSync, backup, constants as C } from 'node:sqlite';
-import { readFileSync, readdirSync, existsSync, realpathSync, mkdirSync, mkdtempSync, copyFileSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, lstatSync, existsSync, realpathSync, mkdirSync, mkdtempSync, copyFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
@@ -10,6 +10,26 @@ const HISTORY_DDL = `CREATE TABLE "${HISTORY}" (version INTEGER PRIMARY KEY, nam
 const hash = data => createHash('sha256').update(data).digest('hex');
 const quote = name => '"' + name.replaceAll('"', '""') + '"';
 const failure = (kind, message) => Object.assign(new Error(message), { kind });
+const decodeUtf8 = bytes => new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+
+function readChecks(path, filename) {
+  if (!lstatSync(path).isFile()) throw failure('input', `checks must be a regular file: ${filename}`);
+  const bytes = readFileSync(path);
+  let document;
+  try { document = JSON.parse(decodeUtf8(bytes).replace(/^\uFEFF/, '')); }
+  catch { throw failure('input', `${filename}: invalid UTF-8 JSON checks document`); }
+  if (!document || Array.isArray(document) || Object.keys(document).join(',') !== 'checks' || !Array.isArray(document.checks) || document.checks.length === 0) {
+    throw failure('input', `${filename}: expected a nonempty checks array`);
+  }
+  const names = new Set();
+  for (const check of document.checks) {
+    if (!check || Array.isArray(check) || Object.keys(check).some(key => !['name', 'sql'].includes(key)) || typeof check.name !== 'string' || !check.name.trim() || typeof check.sql !== 'string' || !check.sql.trim() || check.sql.includes('\0') || names.has(check.name)) {
+      throw failure('input', `${filename}: checks require unique names and nonempty SQL, with no unknown fields`);
+    }
+    names.add(check.name);
+  }
+  return { bytes, checks: document.checks };
+}
 function portable(value) {
   if (typeof value === 'bigint') return value <= BigInt(Number.MAX_SAFE_INTEGER) && value >= BigInt(Number.MIN_SAFE_INTEGER) ? Number(value) : { $int64: String(value) };
   if (value instanceof Uint8Array) return { $blob: Buffer.from(value).toString('base64') };
@@ -119,15 +139,65 @@ export class Adapter {
     if (!db.isTransaction) throw failure('policy', `${filename}: transaction ended unexpectedly`);
   }
 
+  check(id, sql, name, filename) {
+    const db = this.db(id);
+    if (!db.isTransaction) throw failure('policy', 'business checks require an active engine transaction');
+    const label = `${filename}: check ${JSON.stringify(name)}`;
+    const reads = new Set([C.SQLITE_SELECT, C.SQLITE_READ, C.SQLITE_FUNCTION, C.SQLITE_RECURSIVE]);
+    let denied = false;
+    db.setAuthorizer((action, a, b, database) => {
+      const reserved = value => typeof value === 'string' && value.toLowerCase().startsWith('__moonmigrate_');
+      if (!reads.has(action) || reserved(a) || reserved(b) || (database && !['main', 'temp'].includes(database))) {
+        denied = true; return C.SQLITE_DENY;
+      }
+      return C.SQLITE_OK;
+    });
+    let iterator;
+    try {
+      const statement = db.prepare(sql);
+      // sqlite3_sql exposes precisely the compiled first statement. Reject an
+      // ignored tail without splitting strings, comments or trigger bodies.
+      const tail = sql.slice(statement.sourceSQL.length);
+      if (!sql.startsWith(statement.sourceSQL) || !/^(?:\s|;|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)*$/.test(tail)) throw failure('policy', `${label}: exactly one read-only query is required`);
+      statement.setReadBigInts(true); statement.setReturnArrays(true);
+      iterator = statement.iterate();
+      const first = iterator.next(), second = iterator.next();
+      if (first.done || !second.done || first.value.length !== 1 || first.value[0] !== 1n) {
+        throw failure('policy', `${label}: expected exactly one row and one INTEGER 1 result`);
+      }
+      return null;
+    } catch (error) {
+      if (denied) throw failure('policy', `${label}: business checks must be read-only`);
+      if (error.kind) throw error;
+      throw failure('policy', `${label}: ${error.message}`);
+    } finally {
+      try { iterator?.return(); } finally { db.setAuthorizer(null); }
+    }
+  }
+
+  load(dir) {
+    const files = readdirSync(dir, { withFileTypes: true });
+    const sqlNames = new Set(files.filter(f => f.name.endsWith('.sql')).map(f => f.name));
+    for (const f of files.filter(f => f.name.endsWith('.checks.json'))) {
+      if (!sqlNames.has(f.name.slice(0, -'.checks.json'.length) + '.sql')) throw failure('input', `orphan checks file: ${f.name}`);
+    }
+    return files.filter(f => f.name.endsWith('.sql')).map(f => {
+      if (!f.isFile()) throw failure('input', `migration must be a regular file: ${f.name}`);
+      const bytes = readFileSync(join(dir, f.name));
+      const sql = decodeUtf8(bytes);
+      if (sql.includes('\0')) throw failure('input', `NUL byte in ${f.name}`);
+      const checksName = f.name.slice(0, -4) + '.checks.json';
+      const present = files.some(candidate => candidate.name === checksName);
+      if (!present) return { filename: f.name, checksum: hash(bytes), sql };
+      const { bytes: checksBytes, checks } = readChecks(join(dir, checksName), checksName);
+      const checksum = hash(`moonmolt-checks-v1\0${hash(bytes)}\0${hash(checksBytes)}`);
+      return { filename: f.name, checksum, sql, checks };
+    });
+  }
+
   dispatch(op, a) {
     switch (op) {
-      case 'load': return readdirSync(a.dir, { withFileTypes: true }).filter(f => f.name.endsWith('.sql')).map(f => {
-        if (!f.isFile()) throw failure('input', `migration must be a regular file: ${f.name}`);
-        const bytes = readFileSync(join(a.dir, f.name));
-        const sql = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
-        if (sql.includes('\0')) throw failure('input', `NUL byte in ${f.name}`);
-        return { filename: f.name, checksum: hash(bytes), sql };
-      });
+      case 'load': return this.load(a.dir);
       case 'open': return this.open(a);
       case 'open_clone': this.stage = 'rehearse'; return this.open({ id: 'clone', path: this.clonePath, rebuild: a.rebuild });
       case 'begin': this.db(a.id).exec('BEGIN IMMEDIATE;'); return null;
@@ -138,6 +208,7 @@ export class Adapter {
       case 'fingerprint': return this.inspect(a.id).fingerprint;
       case 'history_init': this.history(a.id); this.db(a.id).exec(HISTORY_DDL.replace('CREATE TABLE ', 'CREATE TABLE IF NOT EXISTS ') + ';'); return null;
       case 'exec_script': this.stage = a.id === 'source' ? 'apply' : 'rehearse'; this.script(a.id, a.sql, a.filename); return null;
+      case 'exec_check': return this.check(a.id, a.sql, a.name, a.filename);
       case 'history_insert': {
         const e = a.entry;
         this.db(a.id).prepare(`INSERT INTO ${quote(HISTORY)} VALUES (?,?,?,?,?,?,?,?)`).run(e.version, e.name, e.checksum, e.applied_at, BigInt(e.duration_ms), e.schema_before, e.schema_after, e.tool_version);
