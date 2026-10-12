@@ -56,9 +56,30 @@ const report = await run({
 if (!report.ok) throw new Error(`${report.kind}: ${report.message}`);
 ```
 
-运行时串行处理同一 Node 进程中的调用；跨进程并发通过 SQLite 写锁协调。MoonBit 用户可复用根包的 `load_migrations`、`validate_history`、`plan`，或实现 `Driver` 调用 `prepare`／`complete`。接口见 [pkg.generated.mbti](pkg.generated.mbti)，宿主操作约定见 [执行协议](docs/engine.md)。目前根包使用本地开发模块标识，不代表已在 Mooncakes 注册。
+`run` 串行处理同一 JavaScript 上下文中的调用；Worker 或跨进程并发通过 SQLite 写锁协调。MoonBit 用户可复用根包的 `load_migrations`、`validate_history`、`plan`，或实现 `Driver` 调用 `prepare`／`complete`。接口见 [pkg.generated.mbti](pkg.generated.mbti)，宿主操作约定见 [执行协议](docs/engine.md)。目前根包使用本地开发模块标识，不代表已在 Mooncakes 注册。
 
 库调用在入队前固定参数并解析绝对路径，调用后修改原对象或工作目录不会改变迁移目标。`busy_timeout_ms` 配置锁等待（默认 5000，0 表示立即失败）；`backup_dir` 为 `apply` 指定持久备份目录，对应 CLI 的 `--busy-timeout-ms` 和 `--backup-dir`。安装包附带 TypeScript 类型声明。SQLite 执行是同步的，长迁移建议在维护窗口或独立工作进程运行。
+
+## 在独立线程升级（0.3.0）
+
+桌面应用或服务需要保持主线程响应时，可以使用同一引擎的独立线程入口：
+
+```js
+import { runInWorker } from 'moonmolt';
+const report = await runInWorker(
+  { command: 'apply', db: 'app.db', dir: 'migrations' },
+  { onProgress(event) { console.log(event.stage, event.operation, event.state); } },
+);
+if (!report.ok) throw new Error(`${report.kind}: ${report.message}`);
+```
+
+每次调用创建一个 Worker，完成连接清理并退出后返回结果；无需手动管理线程。它复用演练、备份、业务验收与历史校验。参数和相对路径在调用时固定。同一数据库的并发升级仍由 SQLite 写锁协调；`run` 的队列仅在当前 JavaScript 上下文内共享。Worker 不会缩短 SQL 执行或持锁时间，也不能替代维护窗口。
+
+`run(request, { onProgress })` 也支持进度通知，但 SQL 操作仍在调用线程同步执行。事件包含阶段、操作、开始／完成／失败状态、文件和检查名称，以及备份页数；不包含 SQL 内容或业务行。`sequence` 在每次调用内递增，`timestamp` 为 UTC 时间。事件是阶段信息，不是整批任务的百分比。
+
+回调必须同步返回；异常或返回 Promise 会被记录为最多 16 条 `progress_warnings`，不会改变迁移结果。不要用回调控制事务。若 Worker 执行 `apply` 后没有最终报告，即使已经收到提交进度，仍返回 `commit_outcome_unknown`；先读取历史再决定下一步，不自动重试。本版不提供强制终止或取消接口。
+
+CLI 可使用 `--worker --progress`；最终报告输出到 stdout，进度输出到 stderr。`--format json` 时进度为带 `type: "progress"` 的 JSON Lines；失败的最终报告也在 stderr。Node.js 的运行时警告可能同时出现在 stderr，解析时应筛选 JSON 行。
 
 ## 迁移后的业务验收
 

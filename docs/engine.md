@@ -6,6 +6,12 @@ The MoonBit root package owns filename parsing, ordering, immutable history chec
 
 The Node bridge exposes `prepare_json`, `complete_json` and `plan_json`; these are transport functions. Applications should use the queued `run` entry point, which owns connection lifecycle and reports.
 
+`runInWorker(request, options)` owns a fresh Worker per call. It captures primitive request values and absolute paths before structured cloning, invokes the same `run` lifecycle inside the Worker, and resolves after the thread exits. JavaScript contexts have isolated FFI callbacks and queues; SQLite write locks coordinate contexts targeting the same file. Node's default worker argument inheritance is preserved. Only eval/stdin callers' `--input-type` is removed when a file Worker needs explicit arguments.
+
+Both entry points accept a synchronous `onProgress` observer. Events describe session, preparation, backup page counts, scripts, checks, validation and commit operations. Immutable events have sequence numbers and UTC timestamps; they omit SQL and row values. Observer failures become at most 16 unique diagnostics rather than transaction failures. In-process warnings are saved with the backup report. Worker parent observer warnings are attached to the returned report, after the worker has written its report file.
+
+The worker publishes its final report after runtime cleanup, and the parent waits for exit before resolving. A final report wins over later exit errors because it already records the outcome. If an apply worker starts but exits without a final report, the parent conservatively returns `commit_outcome_unknown`, with the last completed backup path if observed. Progress notifications alone do not authorize retry. No forced termination, cancellation or worker pool is exposed in this release.
+
 | Operation | Arguments | Result |
 |---|---|---|
 | `load` | `dir` | Array of `{filename, checksum, sql, checks?}`; immutable SQL and optional checks |
@@ -33,7 +39,7 @@ The MoonBit JSON codec represents `Int64` as a decimal string. Clock values and 
 
 Reports include `ok`, a command/result or failure `kind`/`message`/`exit_code`, execution stage, and persistent backup/report paths when available. Exit categories are 0 success, 1 input/database/runtime, 2 history/policy and 3 lock timeout. On uncertain COMMIT outcome, inspect the history through a fresh invocation before deciding whether another forward migration is needed.
 
-`run(request)` captures primitive values and resolves paths at invocation time, before entering the process queue. Host-only options are `busy_timeout_ms` (integer 0–2147483647, default 5000) and `backup_dir` (apply only, default `<db>.moonmolt-backups`). They configure the Node adapter and are not fields in the MoonBit `Request`. Both CLI and library reject inappropriate creation/inspection options. The shipped `runtime.d.mts` describes library requests and result unions. SQLite operations are synchronous and sessions are serialized process-wide; invoke upgrades at startup or in a maintenance worker when application responsiveness matters.
+`run(request)` captures primitive values and resolves paths at invocation time, before entering the context-local queue. Host-only options are `busy_timeout_ms` (integer 0–2147483647, default 5000) and `backup_dir` (apply only, default `<db>.moonmolt-backups`). They configure the Node adapter and are not fields in the MoonBit `Request`. Both CLI and library reject inappropriate creation/inspection options. The shipped `runtime.d.mts` describes library requests and result unions. SQLite operations are synchronous in their executing context; use `runInWorker` when the caller's event loop must remain responsive.
 
 Planning accepts the pinned upstream JSON format. Table arrays `columns`, `indexes`, `foreign_keys`, `checks`, `triggers`, and root `views` must be present; absent optional defaults/actions or JSON null are supported. Rename hints use `{"tables":[["old","new"]],"columns":[["target_table","old","new"]]}`. SQL expressions for defaults are trusted author input, not untrusted user input.
 
