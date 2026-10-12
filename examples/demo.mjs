@@ -24,6 +24,7 @@ try {
   await checked({ command: 'rehearse', to: 2 });
   assert.deepEqual(readFileSync(db), bytes);
   const first = await checked({ command: 'apply', to: 2 });
+  assert.equal(first.result.checks.length, 2);
   writeFileSync(join(dir, '000004_failure.sql'), "UPDATE orders SET amount_cents=0; INSERT INTO missing VALUES(1);");
   const expectedFailure = await run({ command: 'apply', db, dir, rebuild: true });
   assert.equal(expectedFailure.ok, false);
@@ -39,10 +40,11 @@ try {
   const report = {
     generated_at: new Date().toISOString(), node: process.version,
     sqlite: rows('SELECT sqlite_version() AS version')[0].version,
-    command: 'npm run build && npm run demo', seed: 'deterministic fixture; no random data',
+    command: process.argv.includes('--save-report') ? 'npm run build && node examples/demo.mjs --save-report' : 'npm run build && npm run demo', seed: 'deterministic fixture; no random data',
     before, after: final, users: rows('SELECT * FROM users ORDER BY id'),
     rehearsed_without_modifying_source: true,
     applied_versions: rows('SELECT version FROM __moonmigrate_history').map(r => r.version),
+    business_checks: first.result.checks,
     failure: { kind: expectedFailure.kind, stage: expectedFailure.stage, original_data_preserved: true },
     repeat_noop: repeat.noop, foreign_key_violations: 0,
     backups_created: readdirSync(`${db}.moonmolt-backups`).filter(name => name.endsWith('.sqlite')).length,

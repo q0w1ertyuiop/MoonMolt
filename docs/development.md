@@ -67,3 +67,15 @@ Embedding exposed a separate queue boundary: requests were read only after earli
 The first minimum-version rerun found a test parsing all stderr as JSON; Node 24 also prints its SQLite experimental warning there. The assertion now selects the JSON report line. This was a test portability issue rather than a migration failure.
 
 After the correction, all 31 Node integration cases passed on Windows Node.js 24.10.0 and 26.2.0, alongside all four MoonBit tests and warning-free checks. The freshly packed archive was installed in an independent consumer with lifecycle scripts disabled; its public package exports ran apply/status/plan, and a strict TypeScript NodeNext consumer compiled successfully. The shop demo was rerun with intact orders, references and money amounts.
+
+## 2026-10-12 — business verification in the local development batch
+
+Schema and foreign-key checks still cannot distinguish a valid upgrade from one that accidentally clears every order amount. This batch adds optional per-migration SQL checks in a `.checks.json` sidecar. Both rehearsal and actual execution evaluate them inside the owning transaction, before writing history. A failed check rolls back the whole batch; a report names the migration and the failed business rule.
+
+The sidecar is loaded once with the SQL and included in its checksum using a versioned hash domain. SQL-only migrations retain their previous byte hash, which avoids invalidating existing users' histories. Adding, weakening or deleting an applied sidecar deliberately causes a history mismatch.
+
+SQLite's prepared statement API ignores a second statement after the first. A local probe confirmed `sourceSQL` gives precisely the compiled prefix, including leading comments. The check executor rejects nontrivial tails and uses the authorizer to reject writes. It reads array results rather than objects, since duplicate result column names could otherwise hide a second column. Only a single INTEGER 1 is accepted, and at most two rows are consumed.
+
+The initial warning-free build rejected implicit method promotion on the new public MoonBit type. Its derived methods now use explicit extensions, matching the existing package's JSON API conventions. The earlier compiled artifact was not used as validation for the new feature; the targeted checks were rerun after a successful rebuild.
+
+Final local validation passed all 40 Node integration tests on Windows Node.js 24.10.0 and 26.2.0, plus five MoonBit tests and warning-free build/check. The order demo passed two named business checks with unchanged monetary totals and foreign keys. The 0.2.0 npm archive ran business checks through its public exports in an independent consumer, and its strict TypeScript consumer compiled. The SVG was rendered and visually checked. This batch is committed locally; no remote CI or package publication is claimed.

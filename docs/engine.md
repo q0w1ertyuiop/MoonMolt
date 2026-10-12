@@ -8,7 +8,7 @@ The Node bridge exposes `prepare_json`, `complete_json` and `plan_json`; these a
 
 | Operation | Arguments | Result |
 |---|---|---|
-| `load` | `dir` | Array of `{filename, checksum, sql}`; strict UTF-8, raw-byte SHA-256 |
+| `load` | `dir` | Array of `{filename, checksum, sql, checks?}`; immutable SQL and optional checks |
 | `open` | `id, path, read_only, create, rebuild` | null; existing database unless explicitly created |
 | `open_clone` | `rebuild` | null; completed snapshot copy opened as `clone` |
 | `begin / begin_read / commit / close` | `id` | null; engine-owned write/read transaction/lifecycle |
@@ -19,6 +19,7 @@ The Node bridge exposes `prepare_json`, `complete_json` and `plan_json`; these a
 | `fingerprint` | `id` | SHA-256 of deterministically ordered schema objects |
 | `sequences` | `id` | Business tables as `{name, seq?}`; omit absent seq, use decimal Int64 strings |
 | `exec_script` | `id, sql, filename` | null; guarded SQLite execution, never split on semicolons |
+| `exec_check` | `id, sql, name, filename` | null; one read-only query returning exactly one INTEGER 1 |
 | `validate` | `id` | null only when foreign_key_check is empty and quick_check is `ok` |
 | `clock / timestamp` | empty object | Decimal string of monotonic milliseconds / UTC ISO-8601 string |
 
@@ -37,3 +38,11 @@ Reports include `ok`, a command/result or failure `kind`/`message`/`exit_code`, 
 Planning accepts the pinned upstream JSON format. Table arrays `columns`, `indexes`, `foreign_keys`, `checks`, `triggers`, and root `views` must be present; absent optional defaults/actions or JSON null are supported. Rename hints use `{"tables":[["old","new"]],"columns":[["target_table","old","new"]]}`. SQL expressions for defaults are trusted author input, not untrusted user input.
 
 The native implementation is reserved behind `Driver`; this release ships the Node adapter only. MoonMolt does not claim arbitrary SQLite DDL can be losslessly transformed into the upstream model.
+
+## Business verification (0.2.0)
+
+`MigrationSource` and `Migration` now have `checks: Array[MigrationCheck]?`; `MigrationCheck` contains `name` and `sql`. Existing host JSON may omit `checks`. MoonBit callers constructing these records must provide `checks: None` for SQL-only migrations. A custom driver must implement `exec_check` if it supplies checks; the engine invokes it after each script and sequence validation, before recording history. A failure must raise `Policy` and leave the owning transaction to be rolled back. Successful batch reports include `checks` entries with migration version, filename, check name and `ok: true`. No-op batches do not rerun checks.
+
+The Node host reads `<migration basename>.checks.json` together with SQL. Its format is a nonempty `checks` array of uniquely named `{name, sql}` objects. Orphan files, unknown fields, symlinks and malformed JSON/UTF-8 are rejected. Without a sidecar the checksum stays `sha256(SQL raw bytes)`. With one, the checksum is SHA-256 over the UTF-8 string `moonmolt-checks-v1\0<SQL SHA-256 hex>\0<checks SHA-256 hex>`; the separators are literal NUL bytes. Whitespace changes in a checks file therefore invalidate applied history as SQL edits do.
+
+The SQLite authorizer allows only read/select/function/recursive-query operations on the current database and its temporary tables, excluding reserved metadata access. The prepared statement's `sourceSQL` identifies the first SQLite-compiled statement; any tail containing more than comments, whitespace or empty terminators is rejected. The host fetches at most two rows as arrays with BigInt INTEGER values, so duplicate column labels and enormous result sets cannot conceal a malformed boolean result. SQL errors and unexpected results become policy failures naming the migration and check. Business rules are authored queries, not proofs of arbitrary data preservation; write accurate conditions rather than unconditional `SELECT 1` checks.

@@ -1,0 +1,12 @@
+{
+  "checks": [
+    {
+      "name": "订单数量和金额保持完整",
+      "sql": "SELECT COUNT(*)=2 AND SUM(amount_cents)=7599 FROM orders;"
+    },
+    {
+      "name": "订单状态全部回填",
+      "sql": "SELECT NOT EXISTS(SELECT 1 FROM orders WHERE status IS NULL OR status<>'paid');"
+    }
+  ]
+}

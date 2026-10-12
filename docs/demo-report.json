@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-10-11T03:55:50.575Z",
+  "generated_at": "2026-10-12T03:26:58.558Z",
   "node": "v26.2.0",
   "sqlite": "3.53.1",
-  "command": "npm run build && npm run demo",
+  "command": "npm run build && node examples/demo.mjs --save-report",
   "seed": "deterministic fixture; no random data",
   "before": [
     {
@@ -46,6 +46,20 @@
     2,
     3
   ],
+  "business_checks": [
+    {
+      "version": 1,
+      "filename": "000001_order_status.sql",
+      "name": "订单数量和金额保持完整",
+      "ok": true
+    },
+    {
+      "version": 1,
+      "filename": "000001_order_status.sql",
+      "name": "订单状态全部回填",
+      "ok": true
+    }
+  ],
   "failure": {
     "kind": "database",
     "stage": "rehearse",
@@ -54,6 +68,6 @@
   "repeat_noop": true,
   "foreign_key_violations": 0,
   "backups_created": 3,
-  "first_upgrade_ms": 1,
+  "first_upgrade_ms": 0,
   "rebuild_ms": 2
 }
