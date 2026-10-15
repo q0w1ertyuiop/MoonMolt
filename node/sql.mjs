@@ -4,7 +4,7 @@ function skipTrivia(sql) {
   let offset = 0;
   while (offset < sql.length) {
     const code = sql.charCodeAt(offset);
-    if (code === 32 || (code >= 9 && code <= 13) || code === 0xfeff || sql[offset] === ';') { offset++; continue; }
+    if ([9, 10, 12, 13, 32, 0xfeff].includes(code) || sql[offset] === ';') { offset++; continue; }
     if (sql.startsWith('--', offset)) {
       const end = sql.indexOf('\n', offset + 2);
       offset = end < 0 ? sql.length : end + 1;

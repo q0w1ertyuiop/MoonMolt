@@ -60,10 +60,10 @@ test('comments and empty terminators remain valid no-op scripts', async t => {
 });
 
 test('every statement retains authorizer restrictions and syntax failures roll back', async t => {
-  for (const tail of ['COMMIT;', 'SAVEPOINT forbidden;', 'PRAGMA user_version=10;', "ATTACH ':memory:' AS other;", 'DELETE FROM __moonmigrate_history;', 'SELECT FROM broken;']) {
+  for (const tail of ['COMMIT;', 'SAVEPOINT forbidden;', 'PRAGMA user_version=10;', "ATTACH ':memory:' AS other;", 'DELETE FROM __moonmigrate_history;', 'SELECT FROM broken;', '\u000b SELECT 1;']) {
     const f = fixture(t), before = state(f.db);
     const result = await run({ command: 'apply', db: f.db, migrations: [{ filename: '000001_guard.sql', sql: 'UPDATE accounts SET balance=0; CREATE TABLE preceding(x); ' + tail }] });
     assert.equal(result.ok, false); assert.equal(result.stage, 'rehearse'); assert.deepEqual(state(f.db), before);
-    assert.equal(result.kind, tail.includes('broken') ? 'database' : 'policy', JSON.stringify(result));
+    assert.equal(result.kind, tail.includes('broken') || tail.startsWith('\u000b') ? 'database' : 'policy', JSON.stringify(result));
   }
 });
