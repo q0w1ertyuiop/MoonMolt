@@ -58,6 +58,7 @@ pub(all) struct Request {
   expected_application_id : Int?
   expected_version : Int?
   expected_fingerprint : String?
+  verify_checks : Array[MigrationCheck]?
 } derive(Debug, ToJson, @json.FromJson)
 
 ///|

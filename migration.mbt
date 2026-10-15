@@ -33,19 +33,7 @@ pub fn load_migrations(
     let names : Array[String] = []
     for group in [source.checks, source.preserve] {
       if group is Some(checks) {
-        guard !checks.is_empty() else {
-          raise Input(
-            "empty business checks or preservation queries in \{file}",
-          )
-        }
-        for check in checks {
-          guard check.name.length() > 0 &&
-            check.sql.length() > 0 &&
-            !names.contains(check.name) else {
-            raise Input("invalid or duplicate verification query in \{file}")
-          }
-          names.push(check.name)
-        }
+        validate_check_group(checks, file, names)
       }
     }
     migrations.push({
@@ -65,6 +53,25 @@ pub fn load_migrations(
     }
   }
   migrations
+}
+
+///|
+fn validate_check_group(
+  checks : Array[MigrationCheck],
+  context : String,
+  names : Array[String],
+) -> Unit raise MigrationError {
+  guard !checks.is_empty() else {
+    raise Input("empty verification queries in \{context}")
+  }
+  for check in checks {
+    guard check.name.length() > 0 &&
+      check.sql.length() > 0 &&
+      !names.contains(check.name) else {
+      raise Input("invalid or duplicate verification query in \{context}")
+    }
+    names.push(check.name)
+  }
 }
 
 ///|

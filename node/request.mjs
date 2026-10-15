@@ -1,11 +1,12 @@
 import { resolve } from 'node:path';
-import { captureMigrations } from './migrations.mjs';
+import { captureMigrations, captureVerificationChecks } from './migrations.mjs';
 
 /** Capture primitive request values before queueing or crossing a worker boundary. */
 export function captureRequest(request) {
   if (!request || typeof request !== 'object' || Array.isArray(request)) throw new Error('request must be an object');
-  const { command = 'status', db, dir, migrations, rebuild = false, create = false, to, busy_timeout_ms = 5000, backup_dir, expected_application_id, expected_version, expected_fingerprint } = request;
+  const { command = 'status', db, dir, migrations, rebuild = false, create = false, to, busy_timeout_ms = 5000, backup_dir, expected_application_id, expected_version, expected_fingerprint, verify_checks } = request;
   if (!['inspect', 'status', 'verify', 'rehearse', 'apply'].includes(command)) throw new Error('unknown command');
+  if (verify_checks !== undefined && command !== 'verify') throw new Error('verify_checks only applies to verify');
   if (typeof db !== 'string' || !db.trim()) throw new Error('db must be a nonempty file path');
   if (dir !== undefined && (typeof dir !== 'string' || !dir.trim())) throw new Error('dir must be a nonempty directory path');
   if (migrations !== undefined && (dir !== undefined || command === 'inspect')) throw new Error('migrations cannot be combined with dir or inspect');
@@ -20,6 +21,7 @@ export function captureRequest(request) {
   if (!Number.isInteger(busy_timeout_ms) || busy_timeout_ms < 0 || busy_timeout_ms > 2147483647) throw new Error('busy_timeout_ms must be an integer between 0 and 2147483647');
   if (backup_dir !== undefined && (command !== 'apply' || typeof backup_dir !== 'string' || !backup_dir.trim())) throw new Error('backup_dir requires apply and a nonempty directory path');
   return Object.freeze({ command, db: resolve(db), ...(migrations === undefined ? { dir: resolve(dir ?? 'migrations') } : {}), rebuild, create, busy_timeout_ms,
+    ...(verify_checks === undefined ? {} : { verify_checks: captureVerificationChecks(verify_checks) }),
     ...(migrations === undefined ? {} : { migrations: captureMigrations(migrations) }),
     ...(expected_application_id === undefined ? {} : { expected_application_id }),
     ...(expected_version === undefined ? {} : { expected_version }),

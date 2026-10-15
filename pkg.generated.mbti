@@ -115,6 +115,7 @@ pub(all) struct Request {
   expected_application_id : Int?
   expected_version : Int?
   expected_fingerprint : String?
+  verify_checks : Array[MigrationCheck]?
 } derive(ToJson, @debug.Debug, @json.FromJson)
 pub fn Request::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
 pub fn Request::to_json(Self) -> Json

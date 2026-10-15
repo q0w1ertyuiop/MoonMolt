@@ -18,6 +18,8 @@ export interface RunRequest {
   expected_version?: number;
   /** Require the reviewed initial schema hash from inspect/status; 64 lowercase hex characters. */
   expected_fingerprint?: string;
+  /** Current application checks, verify only; one read-only INTEGER 1 query per rule. */
+  verify_checks?: readonly { name: string; sql: string }[];
   to?: number | null;
   rebuild?: boolean;
   create?: boolean;
@@ -52,7 +54,7 @@ export interface ReportPaths {
   report_warning?: string;
 }
 export type RunSuccess = ReportPaths & (
-  | { ok: true; command: 'verify'; verified: true; database_modified: false; applied: HistoryEntry[]; pending: string[]; current_version: number; application_id: number; fingerprint: string; validation: { integrity_check: 'ok'; foreign_key_check: 'ok' } }
+  | { ok: true; command: 'verify'; verified: true; database_modified: false; applied: HistoryEntry[]; pending: string[]; current_version: number; application_id: number; fingerprint: string; validation: { integrity_check: 'ok'; foreign_key_check: 'ok' }; checks: { name: string; ok: true }[] }
   | { ok: true; snapshot: { objects: Json[]; tables: Json[]; fingerprint: string; sqlite_version: string; application_id: number } }
   | { ok: true; command: 'status'; applied: HistoryEntry[]; pending: string[]; noop: boolean; current_version: number; application_id: number; fingerprint: string }
   | { ok: true; command: 'apply' | 'rehearse'; applied: HistoryEntry[]; pending: []; noop: true; current_version: number; application_id: number; fingerprint: string }

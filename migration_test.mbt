@@ -183,6 +183,7 @@ test "engine compares exact captured values before writing history or committing
     expected_application_id: None,
     expected_version: None,
     expected_fingerprint: None,
+    verify_checks: None,
   }
   let good = PreservationDriver::{ calls: [], corrupt: false, }
   let result = @moonmolt.complete(good, @moonmolt.prepare(good, request))
@@ -253,6 +254,7 @@ test "preconditions belong to the MoonBit engine and run after acquiring the loc
     expected_application_id: Some(1234),
     expected_version: Some(0),
     expected_fingerprint: None,
+    verify_checks: None,
   }
   let driver = GuardDriver::{ calls: [], }
   let prepared = @moonmolt.prepare(driver, request)
@@ -299,6 +301,13 @@ impl @moonmolt.Driver for VerificationDriver with fn call(self, op, args) {
     "application_id" => 321
     "history" => []
     "fingerprint" => "same"
+    "exec_check" => {
+      guard args
+        is { "id": "source", "filename": "verify", "sql": "SELECT 1;", .. } else {
+        raise @moonmolt.Policy("current business rule failed")
+      }
+      Json::null()
+    }
     "verify" =>
       if self.invalid_result {
         Json::null()
@@ -321,6 +330,7 @@ test "verification is read-only, has no backup despite pending SQL, and checks h
     expected_application_id: Some(321),
     expected_version: Some(0),
     expected_fingerprint: None,
+    verify_checks: None,
   }
   let driver = VerificationDriver::{ calls: [], invalid_result: false, }
   let prepared = @moonmolt.prepare(driver, request)
@@ -359,6 +369,66 @@ test "verification is read-only, has no backup despite pending SQL, and checks h
 }
 
 ///|
+test "current verification checks follow integrity and fail closed before claiming success" {
+  let request : @moonmolt.Request = {
+    command: "verify",
+    db: "app.db",
+    dir: "",
+    rebuild: false,
+    create: false,
+    to: None,
+    expected_application_id: None,
+    expected_version: None,
+    expected_fingerprint: None,
+    verify_checks: Some([{ name: "healthy", sql: "SELECT 1;", }]),
+  }
+  let driver = VerificationDriver::{ calls: [], invalid_result: false, }
+  let prepared = @moonmolt.prepare(driver, request)
+  @test.assert_eq(prepared.backup_required, false)
+  guard prepared.report
+    is { "checks": [{ "name": "healthy", "ok": true, .. }], .. } else {
+    fail("expected named current verification result")
+  }
+  @test.assert_eq(driver.calls[driver.calls.length() - 2:], [
+    "verify", "exec_check",
+  ])
+  let bad = VerificationDriver::{ calls: [], invalid_result: false, }
+  try
+    @moonmolt.prepare(bad, {
+      ..request,
+      verify_checks: Some([{ name: "bad", sql: "SELECT 0;", }]),
+    })
+  catch {
+    @moonmolt.Policy(_) => ()
+    _ => fail("expected business policy failure")
+  } noraise {
+    _ => fail("failed current rule cannot verify")
+  }
+  for
+    invalid in [
+      { ..request, command: "apply", },
+      { ..request, verify_checks: Some([]), },
+      { ..request, verify_checks: Some([{ name: "", sql: "SELECT 1;", }]), },
+      {
+        ..request,
+        verify_checks: Some([
+          { name: "same", sql: "SELECT 1;", },
+          { name: "same", sql: "SELECT 1;", },
+        ]),
+      },
+    ] {
+    let rejected = VerificationDriver::{ calls: [], invalid_result: false, }
+    try @moonmolt.prepare(rejected, invalid) catch {
+      @moonmolt.Input(_) => ()
+      _ => fail("expected invalid current verification request")
+    } noraise {
+      _ => fail("invalid current checks must fail before host work")
+    }
+    @test.assert_eq(rejected.calls.length(), 0)
+  }
+}
+
+///|
 priv struct FingerprintDriver {
   calls : Array[String]
   fingerprint : String
@@ -388,6 +458,7 @@ test "reviewed schema conditions are enforced by the core after locking and befo
     expected_application_id: None,
     expected_version: None,
     expected_fingerprint: Some(fingerprint),
+    verify_checks: None,
   }
   let driver = FingerprintDriver::{ calls: [], fingerprint, }
   let prepared = @moonmolt.prepare(driver, request)

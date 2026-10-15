@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync } from 'node:fs';
 import { run, runInWorker, plan } from './runtime.mjs';
+import { parseVerificationChecks } from './migrations.mjs';
 
 const help = `MoonMolt · 月蜕 — 结构焕新，数据如初
 
@@ -8,6 +9,7 @@ moonmolt inspect --db app.db [--format json]
 moonmolt status --db app.db --dir migrations [--to 3]
 moonmolt verify --db app.db --dir migrations [--worker] [--format json]
                 [--expected-application-id 1234] [--expected-version 3]
+                [--checks-file application-health.json]
 moonmolt rehearse --db app.db --dir migrations [--rebuild]
 moonmolt apply --db app.db --dir migrations [--to 3] [--rebuild] [--create]
               [--backup-dir backups] [--busy-timeout-ms 5000] [--worker] [--progress]
@@ -28,7 +30,7 @@ function parse(argv) {
   if (!['inspect', 'status', 'verify', 'rehearse', 'apply', 'plan'].includes(command)) throw new Error(`unknown command: ${command}`);
   const result = { command, format: 'text' };
   const bools = new Set(['--rebuild', '--create', '--allow-destructive', '--worker', '--progress']);
-  const values = new Set(['--db', '--dir', '--to', '--format', '--before', '--after', '--hints', '--out', '--backup-dir', '--busy-timeout-ms', '--expected-application-id', '--expected-version', '--expected-fingerprint']);
+  const values = new Set(['--db', '--dir', '--to', '--format', '--before', '--after', '--hints', '--out', '--backup-dir', '--busy-timeout-ms', '--expected-application-id', '--expected-version', '--expected-fingerprint', '--checks-file']);
   const seen = new Set();
   while (argv.length) {
     const option = argv.shift();
@@ -47,6 +49,7 @@ function parse(argv) {
   if (command !== 'plan') allowed.add('expected_fingerprint');
   if (command !== 'plan' && command !== 'inspect') allowed.add('expected_version');
   if (command === 'verify') for (const key of ['to', 'rebuild', 'create']) allowed.delete(key);
+  if (command === 'verify') allowed.add('checks_file');
   for (const key of Object.keys(result)) if (!allowed.has(key)) throw new Error(`${key} does not apply to ${command}`);
   if (command === 'plan') { if (!result.before || !result.after) throw new Error('plan requires --before and --after'); }
   else {
@@ -75,7 +78,7 @@ function text(report) {
   if (!report.ok) return `MoonMolt: ${report.kind}: ${report.message}${report.backup ? '\nBackup: ' + report.backup : ''}`;
   if (report.snapshot) return JSON.stringify(report.snapshot, null, 2);
   if (report.sql !== undefined) return report.sql + (report.requires_rebuild ? '\nApply this draft with --rebuild after review.\n' : '');
-  if (report.command === 'status' || report.command === 'verify') return `${report.command === 'verify' ? 'Database verification passed (integrity and foreign keys).\n' : ''}Application ID: ${report.application_id}\nCurrent version: ${report.current_version}\nFingerprint: ${report.fingerprint}\nApplied: ${report.applied.length}\nPending: ${report.pending.join(', ') || 'none'}`;
+  if (report.command === 'status' || report.command === 'verify') return `${report.command === 'verify' ? 'Database verification passed (integrity and foreign keys).\n' : ''}Application ID: ${report.application_id}\nCurrent version: ${report.current_version}\nFingerprint: ${report.fingerprint}\nApplied: ${report.applied.length}\nPending: ${report.pending.join(', ') || 'none'}${report.command === 'verify' ? '\nBusiness checks passed: ' + report.checks.length : ''}`;
   if (report.noop) return 'Database is up to date. No migration or backup created.';
   const applied = report.result?.applied ?? report.rehearsal?.applied ?? [];
   const checks = report.result?.checks ?? report.rehearsal?.checks ?? [];
@@ -94,6 +97,7 @@ try {
     report = plan({ before: read(options.before), after: read(options.after), hints: options.hints ? read(options.hints) : undefined, allow_destructive: options.allow_destructive });
     if (report.ok && options.out) writeFileSync(options.out, report.sql, { flag: 'wx' });
   } else {
+    if (options.checks_file) options.verify_checks = parseVerificationChecks(readFileSync(options.checks_file));
     const onProgress = options.progress ? event => {
       console.error(format === 'json' ? JSON.stringify({ type: 'progress', ...event }) : `${event.stage}: ${event.operation} ${event.state}${event.filename ? ' ' + event.filename : ''}`);
     } : undefined;

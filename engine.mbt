@@ -93,6 +93,12 @@ pub fn prepare(
       raise Input("verify does not accept to, rebuild or create")
     }
   }
+  if request.verify_checks is Some(checks) {
+    guard request.command == "verify" else {
+      raise Input("verify_checks only applies to verify")
+    }
+    validate_check_group(checks, "verify_checks", [])
+  }
   if request.expected_version is Some(version) {
     guard request.command != "inspect" && version >= 0 && version <= 999999 else {
       raise Input(
@@ -175,6 +181,20 @@ pub fn prepare(
       is { "integrity_check": "ok", "foreign_key_check": "ok", .. } else {
       raise Database("host returned invalid verification results")
     }
+    let checks : Array[Json] = []
+    if request.verify_checks is Some(queries) {
+      for check in queries {
+        ignore(
+          driver.call("exec_check", {
+            "id": "source",
+            "sql": ToJson::to_json(check.sql),
+            "name": ToJson::to_json(check.name),
+            "filename": "verify",
+          }),
+        )
+        checks.push({ "name": ToJson::to_json(check.name), "ok": true })
+      }
+    }
     {
       "ok": true,
       "command": "verify",
@@ -185,6 +205,7 @@ pub fn prepare(
       "current_version": ToJson::to_json(current_version),
       "application_id": ToJson::to_json(application_id),
       "validation": validation,
+      "checks": ToJson::to_json(checks),
       "fingerprint": ToJson::to_json(fingerprint),
     }
   } else {
@@ -295,7 +316,7 @@ fn apply_batch(
       duration_ms: finish - start,
       schema_before: before,
       schema_after: after,
-      tool_version: "0.8.0",
+      tool_version: "0.9.0",
     }
     ignore(
       driver.call("history_insert", {
