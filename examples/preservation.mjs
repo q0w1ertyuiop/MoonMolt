@@ -44,12 +44,22 @@ try {
   const backupVerification = await runInWorker({ command: 'verify', db: upgraded.backup, migrations, expected_version: 0 });
   assert.equal(backupVerification.ok, true, JSON.stringify(backupVerification));
   assert.equal(backupVerification.pending.length, 1);
-  const sourceVerification = await runInWorker({ command: 'verify', db, migrations, expected_version: 1 });
+  const verify_checks = [{ name: 'current amounts stay positive', sql: 'SELECT COUNT(*)=2 AND MIN(amount_cents)>0 FROM main.orders;' }];
+  const sourceVerification = await runInWorker({ command: 'verify', db, migrations, expected_version: 1, verify_checks });
   assert.equal(sourceVerification.ok, true, JSON.stringify(sourceVerification));
+  assert.equal(sourceVerification.checks.length, 1);
+  // Later application damage can leave SQLite and migration history valid.
+  const damaged = new DatabaseSync(db);
+  try { damaged.exec('UPDATE orders SET amount_cents=0;'); } finally { damaged.close(); }
+  const damagedStructure = await runInWorker({ command: 'verify', db, migrations });
+  assert.equal(damagedStructure.verified, true);
+  const damagedBusiness = await runInWorker({ command: 'verify', db, migrations, verify_checks });
+  assert.equal(damagedBusiness.kind, 'policy');
   console.log(JSON.stringify({ rejected_lossy_upgrade: rejected.kind, source_unchanged_after_failure: true,
     preserved: upgraded.result.preserved, business_checks: upgraded.result.checks, repeat_noop: true,
     backup_verification: { verified: backupVerification.verified, current_version: backupVerification.current_version, pending: backupVerification.pending },
-    source_verification: sourceVerification.validation }, null, 2));
+    source_verification: sourceVerification.validation, current_checks: sourceVerification.checks,
+    later_data_damage: { sqlite_valid: damagedStructure.verified, business_check: damagedBusiness.kind } }, null, 2));
 } finally {
   assert.equal(root.startsWith(join(tmpdir(), 'moonmolt-preservation-demo-')), true);
   rmSync(root, { recursive: true, force: true });

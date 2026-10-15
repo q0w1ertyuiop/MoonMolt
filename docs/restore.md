@@ -9,4 +9,6 @@
 
 Restoration replaces the whole database, including any data written since the backup. It is an operator action, not an automatic down migration. MoonMolt's automatic backups are retained until the operator removes them; plan storage retention for the application.
 
+For current application assertions, add `--checks-file application-health.json` to verify. The file has `{"checks":[{"name":"positive amounts","sql":"SELECT NOT EXISTS(SELECT 1 FROM main.orders WHERE amount_cents<=0);"}]}`. Adapt it to the selected backup's actual schema and expected state; a pre-upgrade snapshot may not have new columns. These explicit rules run after SQLite validation in the same read snapshot and report Policy/exit 2 on failure. They do not replay historical migration rules, repair data, or change the snapshot. The example predicate permits an empty table; add a count rule when existence matters.
+
 A running SQLite database must not be backed up or restored using ordinary file copies. MoonMolt creates its snapshot through SQLite's backup API; only the completed standalone backup is copied into the rehearsal database.

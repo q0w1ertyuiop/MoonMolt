@@ -223,6 +223,37 @@ console.log(report.verified, report.current_version, report.pending);
 
 每项 SQLite 检查的错误最多展示 20 条，存在更多问题时明确标记省略；迁移执行中的错误报告也采用相同限制。`verify` 表示所读快照在这些结构与历史检查下通过，不证明业务内容正确、待迁移 SQL 正确，或选中的文件就是期望的用户数据。恢复操作仍按 [恢复说明](docs/restore.md)停机完成。`npm run demo:preserve` 同时演示升级后核验原库与升级前备份。
 
+## 核验当前业务数据（0.9.0）
+
+恢复备份或排查应用数据时，可以给 `verify` 提供**这次核验的业务规则**。例如 SQLite 结构与历史都正常，但订单金额后来被误写成零：
+
+```js
+const report = await runInWorker({
+  command: 'verify', db: 'app.db', migrations,
+  verify_checks: [
+    { name: '订单金额仍为正数', sql: 'SELECT NOT EXISTS(SELECT 1 FROM main.orders WHERE amount_cents<=0);' },
+  ],
+});
+if (!report.ok) throw new Error(report.message);
+console.log(report.checks); // 仅包含规则名称和 ok，不包含业务值
+```
+
+CLI 使用独立 JSON 文件，例如 `application-health.json`：
+
+```json
+{"checks":[{"name":"订单金额仍为正数","sql":"SELECT NOT EXISTS(SELECT 1 FROM main.orders WHERE amount_cents<=0);"}]}
+```
+
+```sh
+node node/cli.mjs verify --db app.db --dir migrations --checks-file application-health.json --worker
+```
+
+工具先核对历史和可选前置条件，再运行完整性／外键检查，最后在**同一个只读事务快照**中依次执行这些规则。规则只接受单条只读查询、无未绑定参数、一行一列且结果为整数 `1`；失败返回 `policy`／退出码 `2`，不修改数据、不执行待迁移 SQL、不创建备份。可与应用标识、版本和结构指纹条件组合。省略时仍只核验 SQLite 和历史，成功报告的 `checks` 为空数组。
+
+规则数组在库调用时复制，之后修改输入不会改变本次核验。仅 `verify` 接受 `verify_checks`／`--checks-file`；显式提供时必须非空且名称唯一，文件仅接受 `checks` 字段。它不属于迁移历史，不影响已有 SQL／sidecar 校验和，也不会自动读取历史迁移检查。针对升级前备份应提供适合旧结构的规则；应用正常变化后的数据应使用符合当前业务的条件。规则的覆盖范围由应用作者决定；上例允许空表，如需保证订单存在，应再检查数量。参见可运行的 [保留与恢复核验示例](examples/preservation.mjs)。
+
+迁移 DDL 现在还会检查重命名后的对象，禁止业务表借 `ALTER TABLE ... RENAME` 进入保留的 `__moonmigrate_` 命名空间；这类名称原本就不能被迁移脚本正常访问。该检查覆盖主库和临时库，失败回滚整批升级。
+
 ## Schema 辅助规划
 
 ```sh
