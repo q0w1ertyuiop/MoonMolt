@@ -110,9 +110,12 @@ export class Adapter {
     const db = this.db(id);
     if (!db.isTransaction) throw failure('policy', 'migration requires an active engine transaction');
     let denied = null;
+    let namespaceChanged = false;
+    const namespaceActions = new Set([C.SQLITE_CREATE_TABLE, C.SQLITE_CREATE_TEMP_TABLE, C.SQLITE_CREATE_VIEW, C.SQLITE_CREATE_TEMP_VIEW, C.SQLITE_CREATE_VTABLE, C.SQLITE_ALTER_TABLE]);
     const controls = new Set([C.SQLITE_TRANSACTION, C.SQLITE_SAVEPOINT, C.SQLITE_ATTACH, C.SQLITE_DETACH, C.SQLITE_PRAGMA]);
     db.setAuthorizer((action, a, b, database) => {
       if (this.isCancelled()) return C.SQLITE_DENY;
+      if (namespaceActions.has(action)) namespaceChanged = true;
       const reserved = value => typeof value === 'string' && value.toLowerCase().startsWith('__moonmigrate_');
       // The upstream rebuild guard uses the pragma_foreign_key_check table-valued
       // function. SQLite authorizes that read as SQLITE_PRAGMA as well.
@@ -123,7 +126,14 @@ export class Adapter {
       }
       return C.SQLITE_OK;
     });
-    try { executeScript(db, sql, () => this.throwIfCancelled()); }
+    try { executeScript(db, sql, () => this.throwIfCancelled(), () => {
+      if (!namespaceChanged) return;
+      namespaceChanged = false;
+      const collision = db.prepare(`SELECT t.name FROM temp.sqlite_schema AS t JOIN main.sqlite_schema AS m
+        ON t.name=m.name COLLATE NOCASE WHERE t.type IN ('table','view') AND m.type IN ('table','view')
+        AND substr(t.name,1,7)<>'sqlite_' LIMIT 1`).get();
+      if (collision) throw failure('policy', `TEMP object ${JSON.stringify(collision.name)} shadows a main table or view; use a distinct helper name`);
+    }); }
     catch (error) { this.throwIfCancelled(); throw denied ? failure('policy', `${filename}: ${denied}`) : Object.assign(error, { message: `${filename}: ${error.message}` }); }
     finally { db.setAuthorizer(null); }
     if (!db.isTransaction) throw failure('policy', `${filename}: transaction ended unexpectedly`);

@@ -21,7 +21,7 @@ function skipTrivia(sql) {
 }
 
 /** Compile against the preceding statements' schema; never split at semicolons. */
-export function executeScript(db, sql, checkpoint) {
+export function executeScript(db, sql, checkpoint, afterStatement = () => {}) {
   let remaining = sql;
   for (;;) {
     checkpoint();
@@ -35,6 +35,7 @@ export function executeScript(db, sql, checkpoint) {
     // The authorizer stays installed during compilation and execution.
     db.exec(compiled);
     if (!db.isTransaction) throw Object.assign(new Error('transaction ended unexpectedly'), { kind: 'policy' });
+    afterStatement();
     remaining = remaining.slice(compiled.length);
   }
 }
