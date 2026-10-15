@@ -114,6 +114,25 @@ npm run demo:embedded
 
 `status` 增加 `application_id` 和 `current_version`，`inspect` 的快照也包含标识。`migrations` 在调用时复制并冻结，只接受 `filename / sql / checks_json`；校验和由宿主计算。`checks_json` 是可选检查文件的原始 JSON **字符串**。从文件方式切换时，必须保留原始 UTF-8 文本，包括 BOM、换行与 JSON 排版，才能匹配原有校验和；不要先解析再序列化检查文件。拒绝 NUL SQL、无效 Unicode、重复版本和未知字段。完整的笔记应用例子见 [examples/embedded.mjs](examples/embedded.mjs)。
 
+## 锁定审阅过的初始结构（0.8.0）
+
+首次接管旧库时，还没有历史指纹可供比较；相同应用标识和版本也可能对应不同的表、索引或触发器。先审阅可信数据库的 `inspect` 快照，保存其中的 `fingerprint`，部署时用 `expected_fingerprint` 约束初始结构：
+
+```js
+const report = await runInWorker({
+  command: 'apply', db: 'app.db', migrations,
+  expected_application_id: 1297042516,
+  expected_version: 0,
+  expected_fingerprint: reviewedSchemaFingerprint,
+});
+```
+
+该值必须是 64 位小写十六进制字符串，对应 CLI `--expected-fingerprint <指纹>`。所有数据库命令均支持；`apply` 在取得写锁后、备份及执行 SQL 前核对，其他命令在读取事务中核对。条件不符返回 `policy`，无操作调用也检查。已有历史的结构漂移仍优先返回 `history_mismatch`。`status`、`verify` 和无操作报告增加 `fingerprint`；`inspect.snapshot.fingerprint` 和完成批次的 `result.fingerprint`／`rehearsal.fingerprint` 保持可用。
+
+指纹基于排序后的原始结构对象及 SQL，不包含业务数据、应用标识或版本，不能证明数据库属于哪个用户，也不是签名。等价但 SQL 表示不同的结构也可能有不同指纹。升级改变结构后，原指纹会拒绝再次调用；正常幂等启动可省略该条件，或使用已经确认成功的新结构指纹。不要在条件失败后读取未知文件的当前指纹并自动重试，这会绕过原先的审阅约束。可运行的笔记示例演示了旧指纹拒绝与新指纹下的无操作调用。
+
+迁移脚本还会在每条相关 DDL 后检查 TEMP 名称：临时表或视图不能与主库表或视图同名（按 SQLite 的名称比较规则）。否则未限定 schema 的业务查询可能读到临时旧数据，掩盖原库损失；即使稍后删除临时对象也会立即拒绝。使用独立名称，例如 `temp.moonmolt_orders_copy`，并在查询中显式写 `main.orders`。名称不同的辅助表可跨脚本使用；不同 schema 中同名的索引以及 SQLite 自有对象不受此表／视图规则影响。
+
 ## 安全取消（0.4.0）
 
 ```js

@@ -21,7 +21,7 @@
   <text x="60" y="287" class="small">结构模型 → SQL 草稿</text>
   <rect x="340" y="160" width="450" height="215" rx="14" class="core"/>
   <text x="365" y="196" class="heading">MoonBit：规则与执行编排</text>
-  <text x="365" y="232" class="body">应用标识 / 版本条件 · 历史与漂移检查</text>
+  <text x="365" y="232" class="body">标识 / 版本 / 结构条件 · 历史与漂移</text>
   <text x="365" y="263" class="body">prepare → 备份 → complete</text>
   <text x="365" y="294" class="body">整批事务 · 前后值保留 · 业务验收</text>
   <text x="365" y="327" class="small">moon_schema_plan@0.4.0：差异与 SQL 生成</text>
@@ -30,13 +30,13 @@
   <text x="850" y="196" class="heading">Node.js：宿主操作</text>
   <text x="850" y="232" class="body">node:sqlite · 参数绑定</text>
   <text x="850" y="263" class="body">文件读取 · 指纹 · 在线备份</text>
-  <text x="850" y="294" class="body">脚本参数保护 · 只读完整核验</text>
+  <text x="850" y="294" class="body">TEMP 遮蔽保护 · 只读完整核验</text>
   <text x="850" y="327" class="small">关闭连接 · 回滚 · 清理临时副本</text>
   <text x="850" y="353" class="small">独立 Worker；原子取消标记与进度通知</text>
   <path d="M300 230H335" class="line"/>
   <path d="M790 230H825" class="line"/>
   <path d="M990 375V425H190V465" class="line"/>
-  <text x="340" y="448" class="small">专用连接获得写锁；源库保持不变直到演练通过</text>
+  <text x="340" y="448" class="small">专用连接获得写锁 → 核对初始结构 → 备份与演练 → 升级原库</text>
   <rect x="40" y="470" width="300" height="170" rx="14" class="box"/>
   <text x="60" y="506" class="heading">① SQLite 原库</text>
   <text x="60" y="542" class="body">BEGIN IMMEDIATE</text>
