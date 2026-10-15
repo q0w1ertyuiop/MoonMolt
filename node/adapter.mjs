@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { migrationSource } from './migrations.mjs';
+import { executeScript } from './sql.mjs';
 
 export const HISTORY = '__moonmigrate_history';
 const HISTORY_DDL = `CREATE TABLE "${HISTORY}" (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL, duration_ms INTEGER NOT NULL, schema_before TEXT NOT NULL, schema_after TEXT NOT NULL, tool_version TEXT NOT NULL)`;
@@ -122,7 +123,7 @@ export class Adapter {
       }
       return C.SQLITE_OK;
     });
-    try { db.exec(sql); }
+    try { executeScript(db, sql, () => this.throwIfCancelled()); }
     catch (error) { this.throwIfCancelled(); throw denied ? failure('policy', `${filename}: ${denied}`) : Object.assign(error, { message: `${filename}: ${error.message}` }); }
     finally { db.setAuthorizer(null); }
     if (!db.isTransaction) throw failure('policy', `${filename}: transaction ended unexpectedly`);
