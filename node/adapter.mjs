@@ -133,6 +133,13 @@ export class Adapter {
     try { executeScript(db, sql, () => this.throwIfCancelled(), () => {
       if (!namespaceChanged) return;
       namespaceChanged = false;
+      // ALTER_TABLE authorizes the old name, so the callback alone cannot see
+      // a new protected name. Check the resulting schema before later SQL runs.
+      const protectedObject = db.prepare(`SELECT name FROM main.sqlite_schema
+        WHERE substr(name,1,14)='__moonmigrate_' COLLATE NOCASE AND name<>?
+        UNION ALL SELECT name FROM temp.sqlite_schema
+        WHERE substr(name,1,14)='__moonmigrate_' COLLATE NOCASE LIMIT 1`).get(HISTORY);
+      if (protectedObject) throw failure('policy', `reserved migration namespace: ${JSON.stringify(protectedObject.name)}`);
       const collision = db.prepare(`SELECT t.name FROM temp.sqlite_schema AS t JOIN main.sqlite_schema AS m
         ON t.name=m.name COLLATE NOCASE WHERE t.type IN ('table','view') AND m.type IN ('table','view')
         AND substr(t.name,1,7)<>'sqlite_' LIMIT 1`).get();
