@@ -23,7 +23,7 @@
   <text x="365" y="196" class="heading">MoonBit：规则与执行编排</text>
   <text x="365" y="232" class="body">应用标识 / 版本条件 · 历史与漂移检查</text>
   <text x="365" y="263" class="body">prepare → 备份 → complete</text>
-  <text x="365" y="294" class="body">整批事务 · 业务验收 · 演练结构比对</text>
+  <text x="365" y="294" class="body">整批事务 · 前后值保留 · 业务验收</text>
   <text x="365" y="327" class="small">moon_schema_plan@0.4.0：差异与 SQL 生成</text>
   <text x="365" y="353" class="small">保护自增 ID 上限；数据与历史同时提交</text>
   <rect x="830" y="160" width="320" height="215" rx="14" class="box"/>
@@ -50,7 +50,7 @@
   <rect x="760" y="470" width="390" height="170" rx="14" class="box"/>
   <text x="780" y="506" class="heading">③ 演练副本</text>
   <text x="780" y="542" class="body">使用同一份不可变迁移 SQL</text>
-  <text x="780" y="573" class="body">SQL + 业务检查 + 外键 / quick_check</text>
+  <text x="780" y="573" class="body">前后基线比对 + 业务 / 外键检查</text>
   <text x="780" y="611" class="small">执行前核对结构与历史；通过后升级原库</text>
   <path d="M340 555H395" class="line"/>
   <path d="M700 555H755" class="line"/>
