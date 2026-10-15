@@ -181,11 +181,11 @@ pub fn plan(
   let migration_plan = match
     @schema.build_plan(previous, next, @schema.SQLite, hints=renames) {
     Ok(value) => value
-    Err(issues) => raise Input(issues.to_json().stringify())
+    Err(issues) => raise Input(ToJson::to_json(issues).stringify())
   }
   let rendered = match @schema.render_plan(migration_plan, allow_destructive~) {
     Ok(value) => value
-    Err(issues) => raise Policy(issues.to_json().stringify())
+    Err(issues) => raise Policy(ToJson::to_json(issues).stringify())
   }
   let sql = unwrap_rendered_sql(rendered.sql)
   let rebuild = migration_plan.steps.any(step => {
@@ -196,8 +196,8 @@ pub fn plan(
   })
   {
     "ok": true,
-    "sql": sql.to_json(),
-    "requires_rebuild": rebuild.to_json(),
+    "sql": ToJson::to_json(sql),
+    "requires_rebuild": ToJson::to_json(rebuild),
     "plan": @schema.plan_to_json(migration_plan),
   }
 }

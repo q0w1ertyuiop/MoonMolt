@@ -10,7 +10,7 @@ pub fn inspect(
   driver : &Driver,
   id : String,
 ) -> SchemaSnapshot raise MigrationError {
-  decode(driver.call("inspect", { "id": id.to_json() }))
+  decode(driver.call("inspect", { "id": ToJson::to_json(id) }))
 }
 
 ///|
@@ -21,14 +21,14 @@ pub fn status(
   to : Int?,
 ) -> Json raise MigrationError {
   let history : Array[HistoryEntry] = decode(
-    driver.call("history", { "id": id.to_json() }),
+    driver.call("history", { "id": ToJson::to_json(id) }),
   )
   let pending = pending_migrations(migrations, history, to)
   check_drift(driver, id, history)
   {
     "ok": true,
-    "applied": history.to_json(),
-    "pending": pending.map(m => m.filename).to_json(),
+    "applied": ToJson::to_json(history),
+    "pending": ToJson::to_json(pending.map(m => m.filename)),
   }
 }
 
@@ -40,7 +40,7 @@ fn check_drift(
 ) -> Unit raise MigrationError {
   if !history.is_empty() {
     let actual : String = decode(
-      driver.call("fingerprint", { "id": id.to_json() }),
+      driver.call("fingerprint", { "id": ToJson::to_json(id) }),
     )
     guard actual == history[history.length() - 1].schema_after else {
       raise HistoryMismatch("database schema changed outside migration history")
@@ -63,17 +63,17 @@ pub fn prepare(
     []
   } else {
     let sources : Array[MigrationSource] = decode(
-      driver.call("load", { "dir": request.dir.to_json() }),
+      driver.call("load", { "dir": ToJson::to_json(request.dir) }),
     )
     load_migrations(sources)
   }
   ignore(
     driver.call("open", {
       "id": "source",
-      "path": request.db.to_json(),
-      "read_only": (request.command != "apply").to_json(),
-      "create": (request.create && request.command == "apply").to_json(),
-      "rebuild": request.rebuild.to_json(),
+      "path": ToJson::to_json(request.db),
+      "read_only": ToJson::to_json(request.command != "apply"),
+      "create": ToJson::to_json(request.create && request.command == "apply"),
+      "rebuild": ToJson::to_json(request.rebuild),
     }),
   )
   if request.command == "apply" {
@@ -86,7 +86,10 @@ pub fn prepare(
       request,
       pending: [],
       backup_required: false,
-      report: { "ok": true, "snapshot": inspect(driver, "source").to_json() },
+      report: {
+        "ok": true,
+        "snapshot": ToJson::to_json(inspect(driver, "source")),
+      },
       fingerprint: "",
       history: [],
     }
@@ -98,10 +101,10 @@ pub fn prepare(
   check_drift(driver, "source", history)
   let report : Json = {
     "ok": true,
-    "command": request.command.to_json(),
-    "applied": history.to_json(),
-    "pending": pending.map(m => m.filename).to_json(),
-    "noop": pending.is_empty().to_json(),
+    "command": ToJson::to_json(request.command),
+    "applied": ToJson::to_json(history),
+    "pending": ToJson::to_json(pending.map(m => m.filename)),
+    "noop": ToJson::to_json(pending.is_empty()),
   }
   let fingerprint : String = decode(
     driver.call("fingerprint", { "id": "source" }),
@@ -125,26 +128,26 @@ fn apply_batch(
   id : String,
   migrations : Array[Migration],
 ) -> Json raise MigrationError {
-  ignore(driver.call("history_init", { "id": id.to_json() }))
+  ignore(driver.call("history_init", { "id": ToJson::to_json(id) }))
   let applied : Array[HistoryEntry] = []
   let verified : Array[Json] = []
   for migration in migrations {
     let sequences : Array[SequenceState] = decode(
-      driver.call("sequences", { "id": id.to_json() }),
+      driver.call("sequences", { "id": ToJson::to_json(id) }),
     )
     let before : String = decode(
-      driver.call("fingerprint", { "id": id.to_json() }),
+      driver.call("fingerprint", { "id": ToJson::to_json(id) }),
     )
     let start : Int64 = decode(driver.call("clock", {}))
     ignore(
       driver.call("exec_script", {
-        "id": id.to_json(),
-        "sql": migration.sql.to_json(),
-        "filename": migration.filename.to_json(),
+        "id": ToJson::to_json(id),
+        "sql": ToJson::to_json(migration.sql),
+        "filename": ToJson::to_json(migration.filename),
       }),
     )
     let updated : Array[SequenceState] = decode(
-      driver.call("sequences", { "id": id.to_json() }),
+      driver.call("sequences", { "id": ToJson::to_json(id) }),
     )
     for previous in sequences {
       if previous.seq is Some(floor) {
@@ -166,22 +169,22 @@ fn apply_batch(
       for check in checks {
         ignore(
           driver.call("exec_check", {
-            "id": id.to_json(),
-            "sql": check.sql.to_json(),
-            "name": check.name.to_json(),
-            "filename": migration.filename.to_json(),
+            "id": ToJson::to_json(id),
+            "sql": ToJson::to_json(check.sql),
+            "name": ToJson::to_json(check.name),
+            "filename": ToJson::to_json(migration.filename),
           }),
         )
         verified.push({
-          "version": migration.version.to_json(),
-          "filename": migration.filename.to_json(),
-          "name": check.name.to_json(),
+          "version": ToJson::to_json(migration.version),
+          "filename": ToJson::to_json(migration.filename),
+          "name": ToJson::to_json(check.name),
           "ok": true,
         })
       }
     }
     let after : String = decode(
-      driver.call("fingerprint", { "id": id.to_json() }),
+      driver.call("fingerprint", { "id": ToJson::to_json(id) }),
     )
     let finish : Int64 = decode(driver.call("clock", {}))
     let stamp : String = decode(driver.call("timestamp", {}))
@@ -197,18 +200,18 @@ fn apply_batch(
     }
     ignore(
       driver.call("history_insert", {
-        "id": id.to_json(),
+        "id": ToJson::to_json(id),
         "entry": ToJson::to_json(entry),
       }),
     )
     applied.push(entry)
   }
-  ignore(driver.call("validate", { "id": id.to_json() }))
-  let fingerprint = driver.call("fingerprint", { "id": id.to_json() })
+  ignore(driver.call("validate", { "id": ToJson::to_json(id) }))
+  let fingerprint = driver.call("fingerprint", { "id": ToJson::to_json(id) })
   {
-    "applied": applied.to_json(),
+    "applied": ToJson::to_json(applied),
     "fingerprint": fingerprint,
-    "checks": verified.to_json(),
+    "checks": ToJson::to_json(verified),
   }
 }
 
@@ -223,7 +226,9 @@ pub fn complete(
     return prepared.report
   }
   ignore(
-    driver.call("open_clone", { "rebuild": prepared.request.rebuild.to_json() }),
+    driver.call("open_clone", {
+      "rebuild": ToJson::to_json(prepared.request.rebuild),
+    }),
   )
   ignore(driver.call("begin", { "id": "clone" }))
   let cloned : String = decode(driver.call("fingerprint", { "id": "clone" }))

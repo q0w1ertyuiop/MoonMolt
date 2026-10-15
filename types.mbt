@@ -98,8 +98,8 @@ pub fn error_json(error : MigrationError) -> Json {
   }
   {
     "ok": false,
-    "kind": kind.to_json(),
-    "exit_code": code.to_json(),
-    "message": message.to_json(),
+    "kind": ToJson::to_json(kind),
+    "exit_code": ToJson::to_json(code),
+    "message": ToJson::to_json(message),
   }
 }

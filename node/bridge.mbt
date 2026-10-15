@@ -32,7 +32,7 @@ pub fn prepare_json(input : String) -> String {
       e => raise @core.Input(e.to_string())
     }
     let prepared = @core.prepare(NodeDriver::{ }, request)
-    { "ok": true, "prepared": prepared.to_json() }
+    { "ok": true, "prepared": ToJson::to_json(prepared) }
   } catch {
     error => @core.error_json(error)
   }
