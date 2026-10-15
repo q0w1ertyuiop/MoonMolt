@@ -89,3 +89,15 @@ Progress observers are telemetry rather than policy. Throwing observers and reje
 The first worker tests failed because explicitly forwarding every Node execArgv flag also forwarded process-only flags from Node's test runner. Default Worker inheritance already filters these correctly, so it is preserved except when file workers must remove an eval/stdin input-type option. After this correction the worker regressions passed. Paths are captured before constructing workers, and results resolve after thread exit so Windows cleanup does not race open files.
 
 All 49 integration tests passed locally on Windows Node.js 24.10.0 and 26.2.0, alongside five MoonBit tests and warning-free checks. The 0.3.0 archive's worker, progress and status APIs ran in an independent consumer; its strict TypeScript consumer passed. The SVG was rendered and visually checked. This remains local development with no remote CI run or publication for this batch.
+
+## 2026-10-16 — cancellation with transaction outcome preserved
+
+The worker made applications responsive, but closing a progress view could only wait for completion or kill its thread. This batch adds AbortSignal cancellation and a shared internal session lifecycle. A shared atomic flag carries requests into synchronous worker execution without waiting for the worker's message loop. The parent retains ownership of its signal and removes listeners after the worker exits.
+
+The initial cancellation tests cover pre-aborted requests, queued sessions, completed backups, source SQL already executed, and the final pre-COMMIT checkpoint. A deterministic worker probe pauses after a real source write, waits for the shared cancellation flag, then confirms data, DDL and history roll back together. No forced thread termination is used.
+
+A lock wait can fail with SQLITE_BUSY after cancellation was requested. The adapter now recognizes cancellation at that safe boundary, while explicitly preserving uncertain COMMIT outcomes. A separate fault test commits, requests cancellation and loses the acknowledgement: it still reports uncertainty rather than claiming rollback. A completed COMMIT with an acknowledgement remains a success despite late cancellation.
+
+CLI SIGINT/SIGTERM handlers request the same cancellation and wait for cleanup. The portable CLI probe emits the Node SIGINT event while a worker waits on a lock; it exercises the registered handler and cancellation exit code without relying on Windows child-process signal emulation.
+
+Local verification passed 58 Node integration tests on Windows Node.js 24.10.0 and 26.2.0 and six MoonBit tests. The freshly packed 0.4.0 archive passed worker/cancel/create/status checks in an independent consumer, and the strict TypeScript signal consumer compiled. The updated architecture SVG was rendered and visually checked. The previously local 0.2.0/0.3.0 commits are included in this push batch; remote CI results are checked after push rather than inferred from local runs.

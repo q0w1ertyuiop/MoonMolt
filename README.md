@@ -77,9 +77,28 @@ if (!report.ok) throw new Error(`${report.kind}: ${report.message}`);
 
 `run(request, { onProgress })` 也支持进度通知，但 SQL 操作仍在调用线程同步执行。事件包含阶段、操作、开始／完成／失败状态、文件和检查名称，以及备份页数；不包含 SQL 内容或业务行。`sequence` 在每次调用内递增，`timestamp` 为 UTC 时间。事件是阶段信息，不是整批任务的百分比。
 
-回调必须同步返回；异常或返回 Promise 会被记录为最多 16 条 `progress_warnings`，不会改变迁移结果。不要用回调控制事务。若 Worker 执行 `apply` 后没有最终报告，即使已经收到提交进度，仍返回 `commit_outcome_unknown`；先读取历史再决定下一步，不自动重试。本版不提供强制终止或取消接口。
+回调必须同步返回；异常或返回 Promise 会被记录为最多 16 条 `progress_warnings`，不会改变迁移结果。若 Worker 执行 `apply` 后没有最终报告，即使已经收到提交进度，仍返回 `commit_outcome_unknown`；先读取历史再决定下一步，不自动重试。
 
 CLI 可使用 `--worker --progress`；最终报告输出到 stdout，进度输出到 stderr。`--format json` 时进度为带 `type: "progress"` 的 JSON Lines；失败的最终报告也在 stderr。Node.js 的运行时警告可能同时出现在 stderr，解析时应筛选 JSON 行。
+
+## 安全取消（0.4.0）
+
+```js
+const controller = new AbortController();
+const pending = runInWorker(
+  { command: 'apply', db: 'app.db', dir: 'migrations' },
+  { signal: controller.signal },
+);
+// 界面的“取消”操作可调用 controller.abort()。
+const report = await pending;
+if (!report.ok && report.kind === 'cancelled') console.log('本批未提交，连接已清理');
+```
+
+`run` 与 `runInWorker` 都接受 Node.js `AbortSignal`。提前取消不会创建数据库；等待队列、备份完成、宿主操作之间和执行 SQL 的授权检查点都会响应取消。未提交的整批数据、DDL 和历史会一起回滚，完成的持久备份与报告保留。取消返回 `kind: "cancelled"`、退出码 `4`。Worker 使用共享原子标记传递取消请求，返回前等待回滚和线程退出，不强杀线程。
+
+取消是协作式的：正在执行的单条 SQLite 运算、写锁等待或在线备份可能需要先结束，才会到达可停止的位置。`busy_timeout_ms` 仍决定等待写锁的上限。若 COMMIT 已完成，迟到的取消保留成功结果；线程意外退出且没有最终报告仍是 `commit_outcome_unknown`，不会仅凭取消请求推断已回滚。同线程 `run` 会阻塞定时器和信号回调，界面或超时取消建议使用 `runInWorker`。
+
+CLI 收到 SIGINT（通常是 Ctrl+C）或 SIGTERM 时请求同样的安全取消；长迁移使用 `--worker` 保持信号响应。收到取消后应等待报告，不要立即再强制终止进程。
 
 ## 迁移后的业务验收
 

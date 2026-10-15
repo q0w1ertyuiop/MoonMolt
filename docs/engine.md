@@ -10,7 +10,15 @@ The Node bridge exposes `prepare_json`, `complete_json` and `plan_json`; these a
 
 Both entry points accept a synchronous `onProgress` observer. Events describe session, preparation, backup page counts, scripts, checks, validation and commit operations. Immutable events have sequence numbers and UTC timestamps; they omit SQL and row values. Observer failures become at most 16 unique diagnostics rather than transaction failures. In-process warnings are saved with the backup report. Worker parent observer warnings are attached to the returned report, after the worker has written its report file.
 
-The worker publishes its final report after runtime cleanup, and the parent waits for exit before resolving. A final report wins over later exit errors because it already records the outcome. If an apply worker starts but exits without a final report, the parent conservatively returns `commit_outcome_unknown`, with the last completed backup path if observed. Progress notifications alone do not authorize retry. No forced termination, cancellation or worker pool is exposed in this release.
+The worker publishes its final report after runtime cleanup, and the parent waits for exit before resolving. A final report wins over later exit errors because it already records the outcome. If an apply worker starts but exits without a final report, the parent conservatively returns `commit_outcome_unknown`, with the last completed backup path if observed. Progress notifications alone do not authorize retry. No forced termination or worker pool is exposed.
+
+## Cooperative cancellation (0.4.0)
+
+Both entry points capture `options.signal`, a Node AbortSignal. The shared internal session owns queueing, cleanup and report persistence. Direct calls poll the captured signal; workers poll an atomic Int32 flag in a SharedArrayBuffer. The parent registers one abort listener and removes it on worker exit or creation failure. Signals, callbacks and abort reasons are never structured-cloned or put into reports.
+
+Cancellation is checked before queue execution, before host operations, after start notifications, in SQL authorizers and after asynchronous backup. It raises the typed MoonBit `Cancelled` error, serialized as `kind: cancelled` with exit category 4. Cleanup bypasses cancellation polling so active transactions are rolled back and connections close. A backup that completed before cancellation remains a complete backup; the cancellation report is persisted beside it.
+
+An active SQLite VM operation, busy wait or backup can finish before a cancellation checkpoint is reached. This release does not interrupt native calls or terminate workers. Cancellation before source COMMIT rolls back; cancellation arriving after a completed COMMIT preserves success. `commit_outcome_unknown` takes precedence over an abort request when acknowledgement is lost. The parent never infers rollback from an abort flag if a worker exits without a final report. In-process synchronous SQLite work delays timer/signal callbacks, so use workers for responsive UI or timeout cancellation.
 
 | Operation | Arguments | Result |
 |---|---|---|
@@ -37,7 +45,7 @@ Before and after each migration the engine compares AUTOINCREMENT sequence floor
 
 The MoonBit JSON codec represents `Int64` as a decimal string. Clock values and the `duration_ms` report field therefore use strings at the transport boundary; the adapter binds durations as SQLite integer values through JavaScript BigInt.
 
-Reports include `ok`, a command/result or failure `kind`/`message`/`exit_code`, execution stage, and persistent backup/report paths when available. Exit categories are 0 success, 1 input/database/runtime, 2 history/policy and 3 lock timeout. On uncertain COMMIT outcome, inspect the history through a fresh invocation before deciding whether another forward migration is needed.
+Reports include `ok`, a command/result or failure `kind`/`message`/`exit_code`, execution stage, and persistent backup/report paths when available. Exit categories are 0 success, 1 input/database/runtime, 2 history/policy, 3 lock timeout and 4 cancelled. On uncertain COMMIT outcome, inspect the history through a fresh invocation before deciding whether another forward migration is needed.
 
 `run(request)` captures primitive values and resolves paths at invocation time, before entering the context-local queue. Host-only options are `busy_timeout_ms` (integer 0–2147483647, default 5000) and `backup_dir` (apply only, default `<db>.moonmolt-backups`). They configure the Node adapter and are not fields in the MoonBit `Request`. Both CLI and library reject inappropriate creation/inspection options. The shipped `runtime.d.mts` describes library requests and result unions. SQLite operations are synchronous in their executing context; use `runInWorker` when the caller's event loop must remain responsive.
 

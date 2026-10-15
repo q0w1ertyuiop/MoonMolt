@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-12T03:26:58.558Z",
+  "generated_at": "2026-10-15T16:07:55.028Z",
   "node": "v26.2.0",
   "sqlite": "3.53.1",
   "command": "npm run build && node examples/demo.mjs --save-report",
@@ -68,6 +68,6 @@
   "repeat_noop": true,
   "foreign_key_violations": 0,
   "backups_created": 3,
-  "first_upgrade_ms": 0,
-  "rebuild_ms": 2
+  "first_upgrade_ms": 1,
+  "rebuild_ms": 1
 }
