@@ -57,6 +57,7 @@ pub(all) struct Request {
   to : Int?
   expected_application_id : Int?
   expected_version : Int?
+  expected_fingerprint : String?
 } derive(Debug, ToJson, @json.FromJson)
 
 ///|

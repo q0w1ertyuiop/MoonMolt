@@ -75,13 +75,17 @@ export class Adapter {
     return null;
   }
 
+  schemaObjects(id) {
+    return this.query(id, 'SELECT type,name,tbl_name,sql FROM main.sqlite_schema WHERE substr(name,1,7)<>\'sqlite_\' AND name<>? ORDER BY type,name', HISTORY);
+  }
+
   inspect(id) {
-    const objects = this.query(id, 'SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE substr(name,1,7)<>\'sqlite_\' AND name<>? ORDER BY type,name', HISTORY);
+    const objects = this.schemaObjects(id);
     const tables = objects.filter(o => o.type === 'table').map(table => ({
       name: table.name, sql: table.sql,
-      columns: this.query(id, `PRAGMA table_xinfo(${quote(table.name)})`),
-      foreign_keys: this.query(id, `PRAGMA foreign_key_list(${quote(table.name)})`),
-      indexes: this.query(id, `PRAGMA index_list(${quote(table.name)})`).map(index => ({ ...index, columns: this.query(id, `PRAGMA index_xinfo(${quote(index.name)})`) })),
+      columns: this.query(id, `PRAGMA main.table_xinfo(${quote(table.name)})`),
+      foreign_keys: this.query(id, `PRAGMA main.foreign_key_list(${quote(table.name)})`),
+      indexes: this.query(id, `PRAGMA main.index_list(${quote(table.name)})`).map(index => ({ ...index, columns: this.query(id, `PRAGMA main.index_xinfo(${quote(index.name)})`) })),
     }));
     return { objects, tables, fingerprint: hash(JSON.stringify(objects)), sqlite_version: this.query(id, 'SELECT sqlite_version() AS version')[0].version, application_id: this.query(id, 'PRAGMA main.application_id')[0].application_id };
   }
@@ -252,7 +256,7 @@ export class Adapter {
       case 'application_id': return this.query(a.id, 'PRAGMA main.application_id')[0].application_id;
       case 'sequences': return this.sequences(a.id);
       case 'inspect': return this.inspect(a.id);
-      case 'fingerprint': return this.inspect(a.id).fingerprint;
+      case 'fingerprint': return hash(JSON.stringify(this.schemaObjects(a.id)));
       case 'history_init': this.history(a.id); this.db(a.id).exec(HISTORY_DDL.replace('CREATE TABLE ', 'CREATE TABLE IF NOT EXISTS ') + ';'); return null;
       case 'exec_script': this.stage = a.id === 'source' ? 'apply' : 'rehearse'; this.script(a.id, a.sql, a.filename); return null;
       case 'exec_check': return this.check(a.id, a.sql, a.name, a.filename);

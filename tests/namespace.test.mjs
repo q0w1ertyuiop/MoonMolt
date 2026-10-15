@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { run, runInWorker } from '../node/runtime.mjs';
+import { Adapter } from '../node/adapter.mjs';
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'moonmolt-namespace-'));
@@ -59,4 +60,29 @@ test('distinct helper tables and views remain available across scripts', async t
   ] });
   assert.equal(result.ok, true, JSON.stringify(result)); assert.equal(result.result.checks.length, 1);
   assert.equal(original(f.db).amount, 100);
+});
+
+test('source-only namespace conflicts roll back earlier writes and retain the backup', async t => {
+  const f = fixture(t), script = Adapter.prototype.script;
+  Adapter.prototype.script = function(id, sql, filename) {
+    return script.call(this, id, sql + (id === 'source' ? ' CREATE TEMP TABLE orders AS SELECT * FROM main.orders;' : ''), filename);
+  };
+  let report;
+  try { report = await run({ command: 'apply', db: f.db, migrations: [{ filename: '000001_update.sql', sql: 'UPDATE orders SET amount=amount+1;' }] }); }
+  finally { Adapter.prototype.script = script; }
+  assert.equal(report.kind, 'policy'); assert.equal(report.stage, 'apply');
+  assert.deepEqual(original(f.db), { amount: 100, history: 0 }); assert.deepEqual(original(report.backup), { amount: 100, history: 0 });
+});
+
+test('independent index names and SQLite-owned sequence objects are not business shadows', async t => {
+  const f = fixture(t);
+  const report = await runInWorker({ command: 'apply', db: f.db, migrations: [{ filename: '000001_helpers.sql', sql: `
+    CREATE INDEX main.lookup ON orders(amount);
+    CREATE TEMP TABLE saved_orders(id,amount);
+    CREATE INDEX temp.lookup ON saved_orders(id);
+    CREATE TABLE events(id INTEGER PRIMARY KEY AUTOINCREMENT);
+    CREATE TEMP TABLE saved_events(id INTEGER PRIMARY KEY AUTOINCREMENT);
+    INSERT INTO events DEFAULT VALUES; INSERT INTO saved_events DEFAULT VALUES;
+  ` }] });
+  assert.equal(report.ok, true, JSON.stringify(report)); assert.equal(original(f.db).amount, 100);
 });

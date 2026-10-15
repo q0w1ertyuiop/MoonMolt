@@ -24,26 +24,40 @@ pub fn status(
     driver.call("history", { "id": ToJson::to_json(id) }),
   )
   let pending = pending_migrations(migrations, history, to)
-  check_drift(driver, id, history)
+  let fingerprint : String = decode(
+    driver.call("fingerprint", { "id": ToJson::to_json(id) }),
+  )
+  check_drift(fingerprint, history)
   {
     "ok": true,
     "applied": ToJson::to_json(history),
     "pending": ToJson::to_json(pending.map(m => m.filename)),
+    "fingerprint": ToJson::to_json(fingerprint),
   }
 }
 
 ///|
 fn check_drift(
-  driver : &Driver,
-  id : String,
+  actual : String,
   history : Array[HistoryEntry],
 ) -> Unit raise MigrationError {
   if !history.is_empty() {
-    let actual : String = decode(
-      driver.call("fingerprint", { "id": ToJson::to_json(id) }),
-    )
     guard actual == history[history.length() - 1].schema_after else {
       raise HistoryMismatch("database schema changed outside migration history")
+    }
+  }
+}
+
+///|
+fn check_expected_fingerprint(
+  actual : String,
+  expected : String?,
+) -> Unit raise MigrationError {
+  if expected is Some(expected) {
+    guard actual == expected else {
+      raise Policy(
+        "schema fingerprint mismatch: expected \{expected}, found \{actual}",
+      )
     }
   }
 }
@@ -59,6 +73,20 @@ pub fn prepare(
     request.command == "rehearse" ||
     request.command == "apply" else {
     raise Input("unknown command \{request.command}")
+  }
+  if request.expected_fingerprint is Some(expected) {
+    guard expected.length() == 64 else {
+      raise Input(
+        "expected_fingerprint must be 64 lowercase hexadecimal characters",
+      )
+    }
+    for ch in expected {
+      guard (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') else {
+        raise Input(
+          "expected_fingerprint must be 64 lowercase hexadecimal characters",
+        )
+      }
+    }
   }
   if request.command == "verify" {
     guard request.to is None && !request.rebuild && !request.create else {
@@ -105,14 +133,16 @@ pub fn prepare(
     }
   }
   if request.command == "inspect" {
+    let snapshot = inspect(driver, "source")
+    check_expected_fingerprint(
+      snapshot.fingerprint,
+      request.expected_fingerprint,
+    )
     return {
       request,
       pending: [],
       backup_required: false,
-      report: {
-        "ok": true,
-        "snapshot": ToJson::to_json(inspect(driver, "source")),
-      },
+      report: { "ok": true, "snapshot": ToJson::to_json(snapshot) },
       fingerprint: "",
       history: [],
       application_id,
@@ -134,7 +164,11 @@ pub fn prepare(
     }
   }
   let pending = pending_migrations(migrations, history, request.to)
-  check_drift(driver, "source", history)
+  let fingerprint : String = decode(
+    driver.call("fingerprint", { "id": "source" }),
+  )
+  check_drift(fingerprint, history)
+  check_expected_fingerprint(fingerprint, request.expected_fingerprint)
   let report : Json = if request.command == "verify" {
     let validation = driver.call("verify", { "id": "source" })
     guard validation
@@ -151,6 +185,7 @@ pub fn prepare(
       "current_version": ToJson::to_json(current_version),
       "application_id": ToJson::to_json(application_id),
       "validation": validation,
+      "fingerprint": ToJson::to_json(fingerprint),
     }
   } else {
     {
@@ -161,11 +196,9 @@ pub fn prepare(
       "noop": ToJson::to_json(pending.is_empty()),
       "current_version": ToJson::to_json(current_version),
       "application_id": ToJson::to_json(application_id),
+      "fingerprint": ToJson::to_json(fingerprint),
     }
   }
-  let fingerprint : String = decode(
-    driver.call("fingerprint", { "id": "source" }),
-  )
   if request.command == "rehearse" {
     ignore(driver.call("close", { "id": "source" }))
   }
@@ -262,7 +295,7 @@ fn apply_batch(
       duration_ms: finish - start,
       schema_before: before,
       schema_after: after,
-      tool_version: "0.7.0",
+      tool_version: "0.8.0",
     }
     ignore(
       driver.call("history_insert", {

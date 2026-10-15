@@ -182,6 +182,7 @@ test "engine compares exact captured values before writing history or committing
     to: None,
     expected_application_id: None,
     expected_version: None,
+    expected_fingerprint: None,
   }
   let good = PreservationDriver::{ calls: [], corrupt: false, }
   let result = @moonmolt.complete(good, @moonmolt.prepare(good, request))
@@ -251,6 +252,7 @@ test "preconditions belong to the MoonBit engine and run after acquiring the loc
     to: None,
     expected_application_id: Some(1234),
     expected_version: Some(0),
+    expected_fingerprint: None,
   }
   let driver = GuardDriver::{ calls: [], }
   let prepared = @moonmolt.prepare(driver, request)
@@ -318,6 +320,7 @@ test "verification is read-only, has no backup despite pending SQL, and checks h
     to: None,
     expected_application_id: Some(321),
     expected_version: Some(0),
+    expected_fingerprint: None,
   }
   let driver = VerificationDriver::{ calls: [], invalid_result: false, }
   let prepared = @moonmolt.prepare(driver, request)
@@ -329,7 +332,7 @@ test "verification is read-only, has no backup despite pending SQL, and checks h
     fail("expected verified report")
   }
   @test.assert_eq(driver.calls, [
-    "load", "open", "begin_read", "application_id", "history", "verify", "fingerprint",
+    "load", "open", "begin_read", "application_id", "history", "fingerprint", "verify",
   ])
   let bad = VerificationDriver::{ calls: [], invalid_result: true, }
   try @moonmolt.prepare(bad, request) catch {
@@ -353,4 +356,101 @@ test "verification is read-only, has no backup despite pending SQL, and checks h
     }
     @test.assert_eq(rejected.calls.length(), 0)
   }
+}
+
+///|
+priv struct FingerprintDriver {
+  calls : Array[String]
+  fingerprint : String
+}
+
+///|
+impl @moonmolt.Driver for FingerprintDriver with fn call(self, op, _args) {
+  self.calls.push(op)
+  match op {
+    "load" | "history" => []
+    "application_id" => 0
+    "fingerprint" => ToJson::to_json(self.fingerprint)
+    _ => Json::null()
+  }
+}
+
+///|
+test "reviewed schema conditions are enforced by the core after locking and before verification" {
+  let fingerprint = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  let request : @moonmolt.Request = {
+    command: "apply",
+    db: "legacy.db",
+    dir: "",
+    rebuild: false,
+    create: false,
+    to: None,
+    expected_application_id: None,
+    expected_version: None,
+    expected_fingerprint: Some(fingerprint),
+  }
+  let driver = FingerprintDriver::{ calls: [], fingerprint, }
+  let prepared = @moonmolt.prepare(driver, request)
+  @test.assert_eq(prepared.fingerprint, fingerprint)
+  @test.assert_eq(prepared.backup_required, false)
+  @test.assert_eq(driver.calls, [
+    "load", "open", "begin", "application_id", "history", "fingerprint",
+  ])
+  for command in ["apply", "verify"] {
+    let rejected = FingerprintDriver::{ calls: [], fingerprint, }
+    try
+      @moonmolt.prepare(rejected, {
+        ..request,
+        command,
+        expected_fingerprint: Some(
+          "0000000000000000000000000000000000000000000000000000000000000000",
+        ),
+      })
+    catch {
+      @moonmolt.Policy(_) => ()
+      _ => fail("expected a reviewed schema policy failure")
+    } noraise {
+      _ => fail("mismatched review must fail even for a no-op")
+    }
+    @test.assert_eq(
+      rejected.calls[2],
+      if command == "apply" {
+        "begin"
+      } else {
+        "begin_read"
+      },
+    )
+    @test.assert_eq(rejected.calls.contains("verify"), false)
+  }
+  for
+    invalid in [
+      "short", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    ] {
+    let rejected = FingerprintDriver::{ calls: [], fingerprint, }
+    try
+      @moonmolt.prepare(rejected, {
+        ..request,
+        expected_fingerprint: Some(invalid),
+      })
+    catch {
+      @moonmolt.Input(_) => ()
+      _ => fail("expected invalid digest input")
+    } noraise {
+      _ => fail("invalid digest must fail before host work")
+    }
+    @test.assert_eq(rejected.calls.length(), 0)
+  }
+}
+
+///|
+test "the reusable status helper exposes the current schema fingerprint" {
+  let fingerprint = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  let driver = FingerprintDriver::{ calls: [], fingerprint, }
+  let result = @moonmolt.status(driver, [], "source", None)
+  @test.assert_eq(result, {
+    "ok": true,
+    "applied": [],
+    "pending": [],
+    "fingerprint": ToJson::to_json(fingerprint),
+  })
 }

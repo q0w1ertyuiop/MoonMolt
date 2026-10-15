@@ -12,12 +12,14 @@ moonmolt rehearse --db app.db --dir migrations [--rebuild]
 moonmolt apply --db app.db --dir migrations [--to 3] [--rebuild] [--create]
               [--backup-dir backups] [--busy-timeout-ms 5000] [--worker] [--progress]
               [--expected-application-id 1234] [--expected-version 0]
+              [--expected-fingerprint <64-lowercase-hex>]
 moonmolt plan --before v1.json --after v2.json [--hints renames.json]
               [--allow-destructive] [--out upgrade.sql] [--format json]
 
 Node.js >=24.10.0. No down migrations. Apply always rehearses first.
 Exit codes: 0 success, 1 input/database/runtime, 2 history/policy, 3 lock timeout, 4 cancelled.
 SIGINT/SIGTERM request cooperative cancellation; use --worker for responsive signals.
+All database commands accept --expected-fingerprint to check a reviewed schema.
 `;
 
 function parse(argv) {
@@ -26,7 +28,7 @@ function parse(argv) {
   if (!['inspect', 'status', 'verify', 'rehearse', 'apply', 'plan'].includes(command)) throw new Error(`unknown command: ${command}`);
   const result = { command, format: 'text' };
   const bools = new Set(['--rebuild', '--create', '--allow-destructive', '--worker', '--progress']);
-  const values = new Set(['--db', '--dir', '--to', '--format', '--before', '--after', '--hints', '--out', '--backup-dir', '--busy-timeout-ms', '--expected-application-id', '--expected-version']);
+  const values = new Set(['--db', '--dir', '--to', '--format', '--before', '--after', '--hints', '--out', '--backup-dir', '--busy-timeout-ms', '--expected-application-id', '--expected-version', '--expected-fingerprint']);
   const seen = new Set();
   while (argv.length) {
     const option = argv.shift();
@@ -42,6 +44,7 @@ function parse(argv) {
   const allowed = command === 'plan' ? new Set(['command', 'format', 'before', 'after', 'hints', 'out', 'allow_destructive']) : command === 'inspect' ? new Set(['command', 'format', 'db', 'busy_timeout_ms']) : new Set(['command', 'format', 'db', 'dir', 'to', 'rebuild', 'create', 'busy_timeout_ms', ...(command === 'apply' ? ['backup_dir'] : [])]);
   if (command !== 'plan') { allowed.add('worker'); allowed.add('progress'); }
   if (command !== 'plan') allowed.add('expected_application_id');
+  if (command !== 'plan') allowed.add('expected_fingerprint');
   if (command !== 'plan' && command !== 'inspect') allowed.add('expected_version');
   if (command === 'verify') for (const key of ['to', 'rebuild', 'create']) allowed.delete(key);
   for (const key of Object.keys(result)) if (!allowed.has(key)) throw new Error(`${key} does not apply to ${command}`);
@@ -72,7 +75,7 @@ function text(report) {
   if (!report.ok) return `MoonMolt: ${report.kind}: ${report.message}${report.backup ? '\nBackup: ' + report.backup : ''}`;
   if (report.snapshot) return JSON.stringify(report.snapshot, null, 2);
   if (report.sql !== undefined) return report.sql + (report.requires_rebuild ? '\nApply this draft with --rebuild after review.\n' : '');
-  if (report.command === 'status' || report.command === 'verify') return `${report.command === 'verify' ? 'Database verification passed (integrity and foreign keys).\n' : ''}Application ID: ${report.application_id}\nCurrent version: ${report.current_version}\nApplied: ${report.applied.length}\nPending: ${report.pending.join(', ') || 'none'}`;
+  if (report.command === 'status' || report.command === 'verify') return `${report.command === 'verify' ? 'Database verification passed (integrity and foreign keys).\n' : ''}Application ID: ${report.application_id}\nCurrent version: ${report.current_version}\nFingerprint: ${report.fingerprint}\nApplied: ${report.applied.length}\nPending: ${report.pending.join(', ') || 'none'}`;
   if (report.noop) return 'Database is up to date. No migration or backup created.';
   const applied = report.result?.applied ?? report.rehearsal?.applied ?? [];
   const checks = report.result?.checks ?? report.rehearsal?.checks ?? [];
