@@ -53,6 +53,8 @@ pub(all) struct Request {
   rebuild : Bool
   create : Bool
   to : Int?
+  expected_application_id : Int?
+  expected_version : Int?
 } derive(Debug, ToJson, @json.FromJson)
 
 ///|
@@ -69,6 +71,7 @@ pub(all) struct Prepared {
   report : Json
   fingerprint : String
   history : Array[HistoryEntry]
+  application_id : Int
 } derive(Debug, ToJson, @json.FromJson)
 
 ///|
@@ -83,6 +86,7 @@ pub(all) struct SchemaSnapshot {
   tables : Array[Json]
   fingerprint : String
   sqlite_version : String
+  application_id : Int
 } derive(Debug, ToJson, @json.FromJson)
 
 ///|

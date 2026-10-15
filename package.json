@@ -1,6 +1,6 @@
 {
   "name": "moonmolt",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "SQLite migrations: rehearse, upgrade, retain your data",
   "repository": { "type": "git", "url": "https://github.com/q0w1ertyuiop/MoonMolt.git" },
   "type": "module",
@@ -12,6 +12,7 @@
     "build": "node scripts/build.mjs",
     "test": "node --test tests/*.test.mjs",
     "demo": "node examples/demo.mjs",
+    "demo:embedded": "node examples/embedded.mjs",
     "prepack": "npm run build"
   },
   "license": "Apache-2.0"

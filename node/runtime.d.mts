@@ -1,8 +1,21 @@
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+export interface MigrationFile {
+  filename: string;
+  /** Exact UTF-8 source, including BOM, comments and line endings. */
+  sql: string;
+  /** Exact sidecar text; parsed objects would change existing byte checksums. */
+  checks_json?: string;
+}
 export interface RunRequest {
   command?: 'inspect' | 'status' | 'rehearse' | 'apply';
   db: string;
   dir?: string;
+  /** Bundled migrations instead of dir; captured immediately, checksummed by the engine host. */
+  migrations?: readonly MigrationFile[];
+  /** Require this signed 32-bit PRAGMA application_id; never assigns it. */
+  expected_application_id?: number;
+  /** Require the current MoonMolt version (0 = empty history), checked under the transaction lock. */
+  expected_version?: number;
   to?: number | null;
   rebuild?: boolean;
   create?: boolean;
@@ -36,9 +49,9 @@ export interface ReportPaths {
   report_warning?: string;
 }
 export type RunSuccess = ReportPaths & (
-  | { ok: true; snapshot: { objects: Json[]; tables: Json[]; fingerprint: string; sqlite_version: string } }
-  | { ok: true; command: 'status'; applied: HistoryEntry[]; pending: string[]; noop: boolean }
-  | { ok: true; command: 'apply' | 'rehearse'; applied: HistoryEntry[]; pending: []; noop: true }
+  | { ok: true; snapshot: { objects: Json[]; tables: Json[]; fingerprint: string; sqlite_version: string; application_id: number } }
+  | { ok: true; command: 'status'; applied: HistoryEntry[]; pending: string[]; noop: boolean; current_version: number; application_id: number }
+  | { ok: true; command: 'apply' | 'rehearse'; applied: HistoryEntry[]; pending: []; noop: true; current_version: number; application_id: number }
   | { ok: true; command: 'apply'; result: BatchResult; rehearsed: true; noop: false }
   | { ok: true; command: 'rehearse'; rehearsal: BatchResult; database_modified: false }
 );

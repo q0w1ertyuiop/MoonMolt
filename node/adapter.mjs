@@ -4,32 +4,13 @@ import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { migrationSource } from './migrations.mjs';
 
 export const HISTORY = '__moonmigrate_history';
 const HISTORY_DDL = `CREATE TABLE "${HISTORY}" (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL, duration_ms INTEGER NOT NULL, schema_before TEXT NOT NULL, schema_after TEXT NOT NULL, tool_version TEXT NOT NULL)`;
 const hash = data => createHash('sha256').update(data).digest('hex');
 const quote = name => '"' + name.replaceAll('"', '""') + '"';
 const failure = (kind, message) => Object.assign(new Error(message), { kind });
-const decodeUtf8 = bytes => new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
-
-function readChecks(path, filename) {
-  if (!lstatSync(path).isFile()) throw failure('input', `checks must be a regular file: ${filename}`);
-  const bytes = readFileSync(path);
-  let document;
-  try { document = JSON.parse(decodeUtf8(bytes).replace(/^\uFEFF/, '')); }
-  catch { throw failure('input', `${filename}: invalid UTF-8 JSON checks document`); }
-  if (!document || Array.isArray(document) || Object.keys(document).join(',') !== 'checks' || !Array.isArray(document.checks) || document.checks.length === 0) {
-    throw failure('input', `${filename}: expected a nonempty checks array`);
-  }
-  const names = new Set();
-  for (const check of document.checks) {
-    if (!check || Array.isArray(check) || Object.keys(check).some(key => !['name', 'sql'].includes(key)) || typeof check.name !== 'string' || !check.name.trim() || typeof check.sql !== 'string' || !check.sql.trim() || check.sql.includes('\0') || names.has(check.name)) {
-      throw failure('input', `${filename}: checks require unique names and nonempty SQL, with no unknown fields`);
-    }
-    names.add(check.name);
-  }
-  return { bytes, checks: document.checks };
-}
 function portable(value) {
   if (typeof value === 'bigint') return value <= BigInt(Number.MAX_SAFE_INTEGER) && value >= BigInt(Number.MIN_SAFE_INTEGER) ? Number(value) : { $int64: String(value) };
   if (value instanceof Uint8Array) return { $blob: Buffer.from(value).toString('base64') };
@@ -49,10 +30,11 @@ export class Adapter {
   backupComplete = false;
   stage = 'prepare';
 
-  constructor({ busy_timeout_ms = 5000, backup_dir, onProgress = () => {}, isCancelled = () => false } = {}) {
+  constructor({ busy_timeout_ms = 5000, backup_dir, migrations, onProgress = () => {}, isCancelled = () => false } = {}) {
     if (!Number.isInteger(busy_timeout_ms) || busy_timeout_ms < 0 || busy_timeout_ms > 2147483647) throw failure('input', 'invalid busy_timeout_ms');
     this.busyTimeout = busy_timeout_ms;
     this.backupDir = backup_dir;
+    this.migrations = migrations;
     this.onProgress = onProgress;
     this.isCancelled = isCancelled;
     const [major, minor] = process.versions.node.split('.').map(Number);
@@ -100,7 +82,7 @@ export class Adapter {
       foreign_keys: this.query(id, `PRAGMA foreign_key_list(${quote(table.name)})`),
       indexes: this.query(id, `PRAGMA index_list(${quote(table.name)})`).map(index => ({ ...index, columns: this.query(id, `PRAGMA index_xinfo(${quote(index.name)})`) })),
     }));
-    return { objects, tables, fingerprint: hash(JSON.stringify(objects)), sqlite_version: this.query(id, 'SELECT sqlite_version() AS version')[0].version };
+    return { objects, tables, fingerprint: hash(JSON.stringify(objects)), sqlite_version: this.query(id, 'SELECT sqlite_version() AS version')[0].version, application_id: this.query(id, 'PRAGMA main.application_id')[0].application_id };
   }
 
   history(id) {
@@ -185,6 +167,11 @@ export class Adapter {
   }
 
   load(dir) {
+    const source = (filename, bytes, checksBytes) => {
+      try { return migrationSource(filename, bytes, checksBytes); }
+      catch (error) { throw failure('input', error.message); }
+    };
+    if (this.migrations !== undefined) return this.migrations.map(entry => source(entry.filename, Buffer.from(entry.sql), entry.checks_json === undefined ? undefined : Buffer.from(entry.checks_json)));
     const files = readdirSync(dir, { withFileTypes: true });
     const sqlNames = new Set(files.filter(f => f.name.endsWith('.sql')).map(f => f.name));
     for (const f of files.filter(f => f.name.endsWith('.checks.json'))) {
@@ -193,14 +180,12 @@ export class Adapter {
     return files.filter(f => f.name.endsWith('.sql')).map(f => {
       if (!f.isFile()) throw failure('input', `migration must be a regular file: ${f.name}`);
       const bytes = readFileSync(join(dir, f.name));
-      const sql = decodeUtf8(bytes);
-      if (sql.includes('\0')) throw failure('input', `NUL byte in ${f.name}`);
       const checksName = f.name.slice(0, -4) + '.checks.json';
       const present = files.some(candidate => candidate.name === checksName);
-      if (!present) return { filename: f.name, checksum: hash(bytes), sql };
-      const { bytes: checksBytes, checks } = readChecks(join(dir, checksName), checksName);
-      const checksum = hash(`moonmolt-checks-v1\0${hash(bytes)}\0${hash(checksBytes)}`);
-      return { filename: f.name, checksum, sql, checks };
+      if (!present) return source(f.name, bytes);
+      const path = join(dir, checksName);
+      if (!lstatSync(path).isFile()) throw failure('input', `checks must be a regular file: ${checksName}`);
+      return source(f.name, bytes, readFileSync(path));
     });
   }
 
@@ -212,6 +197,7 @@ export class Adapter {
       case 'begin': this.db(a.id).exec('BEGIN IMMEDIATE;'); return null;
       case 'begin_read': this.db(a.id).exec('BEGIN;'); return null;
       case 'history': return this.history(a.id);
+      case 'application_id': return this.query(a.id, 'PRAGMA main.application_id')[0].application_id;
       case 'sequences': return this.sequences(a.id);
       case 'inspect': return this.inspect(a.id);
       case 'fingerprint': return this.inspect(a.id).fingerprint;

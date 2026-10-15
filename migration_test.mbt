@@ -117,3 +117,55 @@ test "cancellation has a distinct transport category and exit code" {
     "message": "requested",
   })
 }
+
+///|
+priv struct GuardDriver {
+  calls : Array[String]
+}
+
+///|
+impl @moonmolt.Driver for GuardDriver with fn call(self, op, _args) {
+  self.calls.push(op)
+  match op {
+    "load" | "history" => []
+    "application_id" => 1234
+    "fingerprint" => "empty"
+    _ => Json::null()
+  }
+}
+
+///|
+test "preconditions belong to the MoonBit engine and run after acquiring the lock" {
+  let request : @moonmolt.Request = {
+    command: "apply",
+    db: "app.db",
+    dir: "",
+    rebuild: false,
+    create: false,
+    to: None,
+    expected_application_id: Some(1234),
+    expected_version: Some(0),
+  }
+  let driver = GuardDriver::{ calls: [], }
+  let prepared = @moonmolt.prepare(driver, request)
+  @test.assert_eq(driver.calls, [
+    "load", "open", "begin", "application_id", "history", "fingerprint",
+  ])
+  @test.assert_eq(prepared.application_id, 1234)
+  @test.assert_eq(prepared.backup_required, false)
+  for
+    invalid in [
+      { ..request, expected_application_id: Some(999), },
+      { ..request, expected_version: Some(3), },
+    ] {
+    let rejected = GuardDriver::{ calls: [], }
+    try @moonmolt.prepare(rejected, invalid) catch {
+      @moonmolt.Policy(_) => ()
+      _ => fail("expected a precondition policy failure")
+    } noraise {
+      _ => fail("precondition must reject even an empty migration set")
+    }
+    @test.assert_eq(rejected.calls[2], "begin")
+    @test.assert_eq(rejected.calls.contains("fingerprint"), false)
+  }
+}

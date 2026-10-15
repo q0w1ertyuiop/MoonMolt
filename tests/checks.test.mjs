@@ -39,7 +39,7 @@ test('business checks run in rehearsal and real upgrade and appear in reports', 
   const applied = await run({ command: 'apply', ...f });
   assert.equal(applied.ok, true, JSON.stringify(applied));
   assert.deepEqual(applied.result.checks.map(c => c.name), valid.map(c => c.name));
-  assert.equal(applied.result.applied[0].tool_version, '0.4.0');
+  assert.equal(applied.result.applied[0].tool_version, '0.5.0');
   assert.equal((await run({ command: 'apply', ...f })).noop, true);
 });
 

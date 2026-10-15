@@ -59,6 +59,13 @@ pub fn prepare(
     request.command == "apply" else {
     raise Input("unknown command \{request.command}")
   }
+  if request.expected_version is Some(version) {
+    guard request.command != "inspect" && version >= 0 && version <= 999999 else {
+      raise Input(
+        "expected_version requires a migration command and a version between 0 and 999999",
+      )
+    }
+  }
   let migrations = if request.command == "inspect" {
     []
   } else {
@@ -81,6 +88,16 @@ pub fn prepare(
   } else {
     ignore(driver.call("begin_read", { "id": "source" }))
   }
+  let application_id : Int = decode(
+    driver.call("application_id", { "id": "source" }),
+  )
+  if request.expected_application_id is Some(expected) {
+    guard application_id == expected else {
+      raise Policy(
+        "application_id mismatch: expected \{expected}, found \{application_id}",
+      )
+    }
+  }
   if request.command == "inspect" {
     return {
       request,
@@ -92,11 +109,24 @@ pub fn prepare(
       },
       fingerprint: "",
       history: [],
+      application_id,
     }
   }
   let history : Array[HistoryEntry] = decode(
     driver.call("history", { "id": "source" }),
   )
+  let current_version = if history.is_empty() {
+    0
+  } else {
+    history[history.length() - 1].version
+  }
+  if request.expected_version is Some(expected) {
+    guard current_version == expected else {
+      raise Policy(
+        "migration version mismatch: expected \{expected}, found \{current_version}",
+      )
+    }
+  }
   let pending = pending_migrations(migrations, history, request.to)
   check_drift(driver, "source", history)
   let report : Json = {
@@ -105,6 +135,8 @@ pub fn prepare(
     "applied": ToJson::to_json(history),
     "pending": ToJson::to_json(pending.map(m => m.filename)),
     "noop": ToJson::to_json(pending.is_empty()),
+    "current_version": ToJson::to_json(current_version),
+    "application_id": ToJson::to_json(application_id),
   }
   let fingerprint : String = decode(
     driver.call("fingerprint", { "id": "source" }),
@@ -119,6 +151,7 @@ pub fn prepare(
     report,
     fingerprint,
     history,
+    application_id,
   }
 }
 
@@ -196,7 +229,7 @@ fn apply_batch(
       duration_ms: finish - start,
       schema_before: before,
       schema_after: after,
-      tool_version: "0.4.0",
+      tool_version: "0.5.0",
     }
     ignore(
       driver.call("history_insert", {
@@ -231,6 +264,14 @@ pub fn complete(
     }),
   )
   ignore(driver.call("begin", { "id": "clone" }))
+  let cloned_application_id : Int = decode(
+    driver.call("application_id", { "id": "clone" }),
+  )
+  guard cloned_application_id == prepared.application_id else {
+    raise HistoryMismatch(
+      "database application_id changed while preparing the rehearsal snapshot",
+    )
+  }
   let cloned : String = decode(driver.call("fingerprint", { "id": "clone" }))
   guard cloned == prepared.fingerprint else {
     raise HistoryMismatch(

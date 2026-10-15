@@ -9,6 +9,7 @@ moonmolt status --db app.db --dir migrations [--to 3]
 moonmolt rehearse --db app.db --dir migrations [--rebuild]
 moonmolt apply --db app.db --dir migrations [--to 3] [--rebuild] [--create]
               [--backup-dir backups] [--busy-timeout-ms 5000] [--worker] [--progress]
+              [--expected-application-id 1234] [--expected-version 0]
 moonmolt plan --before v1.json --after v2.json [--hints renames.json]
               [--allow-destructive] [--out upgrade.sql] [--format json]
 
@@ -23,7 +24,7 @@ function parse(argv) {
   if (!['inspect', 'status', 'rehearse', 'apply', 'plan'].includes(command)) throw new Error(`unknown command: ${command}`);
   const result = { command, format: 'text' };
   const bools = new Set(['--rebuild', '--create', '--allow-destructive', '--worker', '--progress']);
-  const values = new Set(['--db', '--dir', '--to', '--format', '--before', '--after', '--hints', '--out', '--backup-dir', '--busy-timeout-ms']);
+  const values = new Set(['--db', '--dir', '--to', '--format', '--before', '--after', '--hints', '--out', '--backup-dir', '--busy-timeout-ms', '--expected-application-id', '--expected-version']);
   const seen = new Set();
   while (argv.length) {
     const option = argv.shift();
@@ -38,12 +39,20 @@ function parse(argv) {
   if (!['text', 'json'].includes(result.format)) throw new Error('--format must be text or json');
   const allowed = command === 'plan' ? new Set(['command', 'format', 'before', 'after', 'hints', 'out', 'allow_destructive']) : command === 'inspect' ? new Set(['command', 'format', 'db', 'busy_timeout_ms']) : new Set(['command', 'format', 'db', 'dir', 'to', 'rebuild', 'create', 'busy_timeout_ms', ...(command === 'apply' ? ['backup_dir'] : [])]);
   if (command !== 'plan') { allowed.add('worker'); allowed.add('progress'); }
+  if (command !== 'plan') allowed.add('expected_application_id');
+  if (command !== 'plan' && command !== 'inspect') allowed.add('expected_version');
   for (const key of Object.keys(result)) if (!allowed.has(key)) throw new Error(`${key} does not apply to ${command}`);
   if (command === 'plan') { if (!result.before || !result.after) throw new Error('plan requires --before and --after'); }
   else {
     if (!result.db) throw new Error(`${command} requires --db`);
     if (command !== 'inspect' && !result.dir) throw new Error(`${command} requires --dir`);
     if (result.create && command !== 'apply') throw new Error('--create only applies to apply');
+    for (const key of ['expected_application_id', 'expected_version']) {
+      if (result[key] !== undefined) {
+        if (!/^-?\d+$/.test(result[key])) throw new Error(`${key} must be an integer`);
+        result[key] = Number(result[key]);
+      }
+    }
     if (result.busy_timeout_ms !== undefined) {
       if (!/^\d+$/.test(result.busy_timeout_ms)) throw new Error('--busy-timeout-ms must be a nonnegative integer');
       result.busy_timeout_ms = Number(result.busy_timeout_ms);
@@ -60,7 +69,7 @@ function text(report) {
   if (!report.ok) return `MoonMolt: ${report.kind}: ${report.message}${report.backup ? '\nBackup: ' + report.backup : ''}`;
   if (report.snapshot) return JSON.stringify(report.snapshot, null, 2);
   if (report.sql !== undefined) return report.sql + (report.requires_rebuild ? '\nApply this draft with --rebuild after review.\n' : '');
-  if (report.command === 'status') return `Applied: ${report.applied.length}\nPending: ${report.pending.join(', ') || 'none'}`;
+  if (report.command === 'status') return `Application ID: ${report.application_id}\nCurrent version: ${report.current_version}\nApplied: ${report.applied.length}\nPending: ${report.pending.join(', ') || 'none'}`;
   if (report.noop) return 'Database is up to date. No migration or backup created.';
   const applied = report.result?.applied ?? report.rehearsal?.applied ?? [];
   const checks = report.result?.checks ?? report.rehearsal?.checks ?? [];
