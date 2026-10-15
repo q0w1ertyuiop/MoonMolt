@@ -81,6 +81,38 @@ if (!report.ok) throw new Error(`${report.kind}: ${report.message}`);
 
 CLI 可使用 `--worker --progress`；最终报告输出到 stdout，进度输出到 stderr。`--format json` 时进度为带 `type: "progress"` 的 JSON Lines；失败的最终报告也在 stderr。Node.js 的运行时警告可能同时出现在 stderr，解析时应筛选 JSON 行。
 
+## 随应用打包与升级前置检查（0.5.0）
+
+桌面应用或服务可以直接携带迁移文本，无需在运行时释放 SQL 目录。`run` 和 `runInWorker` 都支持 `migrations`，它与 `dir` 互斥；文件名、版本顺序、演练、业务检查和历史规则相同。
+
+```js
+import { runInWorker } from './node/runtime.mjs';
+
+const migrations = [
+  { filename: '000001_notes.sql', sql: 'CREATE TABLE notes(id INTEGER PRIMARY KEY, body TEXT NOT NULL);' },
+  { filename: '000003_pinned.sql', sql: 'ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;',
+    checks_json: '{"checks":[{"name":"pinned backfill","sql":"SELECT NOT EXISTS(SELECT 1 FROM notes WHERE pinned<>0);"}]}' },
+];
+const report = await runInWorker({
+  command: 'apply', db: 'notes.db', migrations,
+  expected_application_id: 1297042516,
+  expected_version: 0,
+});
+if (!report.ok) throw new Error(`${report.kind}: ${report.message}`);
+```
+
+示例要求数据库已经由应用初始化为该标识。`expected_application_id` 比较 SQLite 的 [`PRAGMA application_id`](https://www.sqlite.org/pragma.html#pragma_application_id)，接受有符号 32 位整数；工具只检查，不会自动设置或覆盖。未设置的数据库标识为 `0`，`--create` 创建的新库同样如此。应用应在创建自己的新文件时初始化标识，不要给未知旧文件重新打标来绕过检查。该标识区分应用文件类型，不能区分同一应用的不同用户数据库，也不是安全认证。
+
+`expected_version` 要求**当前 MoonMolt 历史版本**等于指定值，`0` 表示没有迁移历史，版本允许间隔；它不是 SQLite 的 `user_version`。两项条件在事务内检查，`apply` 先取得写锁；条件不符返回 `policy`，不执行脚本、不新增备份，已完成迁移的无操作调用也会检查。两个调用都要求旧版本时，后拿到锁的调用会失败。正常启动需要幂等升级时可省略版本条件；处理不确定提交结果时，应先通过不带旧版本条件的 `status` 核对历史，不能自动改条件重放。
+
+```sh
+node node/cli.mjs status --db notes.db --dir migrations --format json
+node node/cli.mjs apply --db notes.db --dir migrations --expected-application-id 1297042516 --expected-version 3 --worker
+npm run demo:embedded
+```
+
+`status` 增加 `application_id` 和 `current_version`，`inspect` 的快照也包含标识。`migrations` 在调用时复制并冻结，只接受 `filename / sql / checks_json`；校验和由宿主计算。`checks_json` 是可选检查文件的原始 JSON **字符串**。从文件方式切换时，必须保留原始 UTF-8 文本，包括 BOM、换行与 JSON 排版，才能匹配原有校验和；不要先解析再序列化检查文件。拒绝 NUL SQL、无效 Unicode、重复版本和未知字段。完整的笔记应用例子见 [examples/embedded.mjs](examples/embedded.mjs)。
+
 ## 安全取消（0.4.0）
 
 ```js
@@ -139,8 +171,8 @@ node node/cli.mjs plan --before examples/before.json --after examples/after.json
 
 ![MoonMolt execution architecture](docs/architecture.svg)
 
-1. 读取一次迁移文件，验证版本、历史与结构指纹。
-2. 获取 `BEGIN IMMEDIATE` 写锁，并在锁内再次检查历史。
+1. 读取一次迁移文件或捕获内存迁移集合，验证版本与校验和。
+2. 获取 `BEGIN IMMEDIATE` 写锁，在事务内核对应用标识、预期版本、历史与结构指纹。
 3. 在任何修改前，通过第二个只读连接备份，再从备份复制演练数据库。
 4. 在副本上完整执行迁移，检查外键与数据库完整性。
 5. 在原库执行同一批 SQL，将历史记录写入同一事务，核对最终结构后提交。

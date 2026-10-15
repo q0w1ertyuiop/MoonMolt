@@ -27,6 +27,7 @@ An active SQLite VM operation, busy wait or backup can finish before a cancellat
 | `open_clone` | `rebuild` | null; completed snapshot copy opened as `clone` |
 | `begin / begin_read / commit / close` | `id` | null; engine-owned write/read transaction/lifecycle |
 | `history` | `id` | Ordered `HistoryEntry[]`, or empty if no metadata exists |
+| `application_id` | `id` | Signed 32-bit `PRAGMA main.application_id`, read inside the active transaction |
 | `history_init` | `id` | null; history table created inside the active transaction |
 | `history_insert` | `id, entry` | null; bound parameter insertion |
 | `inspect` | `id` | `SchemaSnapshot` with raw schema objects and SQLite metadata |
@@ -52,6 +53,16 @@ Reports include `ok`, a command/result or failure `kind`/`message`/`exit_code`, 
 Planning accepts the pinned upstream JSON format. Table arrays `columns`, `indexes`, `foreign_keys`, `checks`, `triggers`, and root `views` must be present; absent optional defaults/actions or JSON null are supported. Rename hints use `{"tables":[["old","new"]],"columns":[["target_table","old","new"]]}`. SQL expressions for defaults are trusted author input, not untrusted user input.
 
 The native implementation is reserved behind `Driver`; this release ships the Node adapter only. MoonMolt does not claim arbitrary SQLite DDL can be losslessly transformed into the upstream model.
+
+## Application embedding and preconditions (0.5.0)
+
+The Node request may supply `migrations: readonly MigrationFile[]` instead of `dir`. Each entry has `filename`, `sql` and optional `checks_json` strings. The host snapshots and validates them synchronously before queueing or worker creation, rejecting caller-supplied checksums and unknown entry fields. Both file and bundle loaders use one UTF-8/checksum implementation. SQL and checks text retain BOM and line endings; lone Unicode surrogates cannot silently become UTF-8 replacement characters. `checks_json` is raw sidecar text to preserve existing byte hashes when changing loaders. The complete immutable prefix must be supplied, including already-applied entries; an empty bundle does not bypass existing history validation. No filesystem migration directory is consulted in bundle mode. This remains a host-only source option; MoonBit receives the same `MigrationSource[]` via `load`.
+
+MoonBit `Request` adds optional `expected_application_id: Int?` and `expected_version: Int?`. Record constructors must supply `None` when unused; JSON may omit them. Custom drivers must now implement `application_id` and include `application_id: Int` in `SchemaSnapshot`. `Prepared` also retains that value; the engine compares the backup clone's application ID, history and schema with preparation. A changed ID between advisory preparation and backup fails with `HistoryMismatch`, even when its schema and history are unchanged.
+
+The engine checks expected identity after opening its write/read transaction and expected version after reading canonical history, before backup, rehearsal, history initialization or any migration. Both are also enforced on no-op calls. Version 0 means empty MoonMolt history and gaps are permitted (not SQLite `user_version`). Failed conditions raise `Policy` with expected and observed values. Identity accepts the full signed 32-bit range; expected version accepts 0–999999 and is rejected for inspection. The host validates numeric input before JSON decoding. Neither guard assigns metadata; an application owns initialization of its own new database's ID. New databases have ID 0, including `apply --create`; a nonzero identity expectation deliberately rejects them until the application has initialized them. An explicitly created file may remain empty after a rejected operation.
+
+`status` and migration no-op reports include `application_id` and `current_version` observed during preparation. Normal completed batch report shapes are unchanged. An identity is a file-format hint, not a tenant identifier or cryptographic proof. The version condition intentionally prevents a second caller from silently succeeding with a stale deployment assumption; ordinary idempotent startup can omit it. On unknown COMMIT outcome, obtain fresh status without the stale expected version before making a retry decision. Scripts still cannot assign PRAGMAs to bypass identity checks.
 
 ## Business verification (0.2.0)
 

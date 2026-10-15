@@ -17,11 +17,11 @@
   <rect x="40" y="160" width="260" height="150" rx="14" class="box"/>
   <text x="60" y="195" class="heading">CLI / 应用调用</text>
   <text x="60" y="230" class="body">status · plan · apply</text>
-  <text x="60" y="259" class="body">版本 SQL + SHA-256</text>
+  <text x="60" y="259" class="body">文件 / 内存集合 + SHA-256</text>
   <text x="60" y="287" class="small">结构模型 → SQL 草稿</text>
   <rect x="340" y="160" width="450" height="215" rx="14" class="core"/>
   <text x="365" y="196" class="heading">MoonBit：规则与执行编排</text>
-  <text x="365" y="232" class="body">历史前缀与指纹链 · 结构漂移检查</text>
+  <text x="365" y="232" class="body">应用标识 / 版本条件 · 历史与漂移检查</text>
   <text x="365" y="263" class="body">prepare → 备份 → complete</text>
   <text x="365" y="294" class="body">整批事务 · 业务验收 · 演练结构比对</text>
   <text x="365" y="327" class="small">moon_schema_plan@0.4.0：差异与 SQL 生成</text>
