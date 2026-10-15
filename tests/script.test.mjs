@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { run, runInWorker } from '../node/runtime.mjs';
+import { Adapter } from '../node/adapter.mjs';
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'moonmolt-script-'));
@@ -66,4 +67,42 @@ test('every statement retains authorizer restrictions and syntax failures roll b
     assert.equal(result.ok, false); assert.equal(result.stage, 'rehearse'); assert.deepEqual(state(f.db), before);
     assert.equal(result.kind, tail.includes('broken') || tail.startsWith('\u000b') ? 'database' : 'policy', JSON.stringify(result));
   }
+});
+
+test('RETURNING statements are fully consumed before subsequent DDL and preserve trigger effects', async t => {
+  const f = fixture(t);
+  const result = await runInWorker({ command: 'apply', db: f.db, migrations: [{ filename: '000001_returning.sql', sql: `
+    INSERT INTO accounts VALUES(2,456);
+    CREATE TABLE audit(account_id INTEGER);
+    CREATE TRIGGER updated AFTER UPDATE ON accounts BEGIN INSERT INTO audit VALUES(new.id); END;
+    UPDATE accounts SET balance=balance+1 RETURNING id,balance;
+    CREATE INDEX account_balance ON accounts(balance);
+  ` }] });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  const reader = new DatabaseSync(f.db);
+  try {
+    assert.deepEqual(reader.prepare('SELECT balance FROM accounts ORDER BY id').all().map(r => r.balance), [124, 457]);
+    assert.deepEqual(reader.prepare('SELECT account_id FROM audit ORDER BY account_id').all().map(r => r.account_id), [1, 2]);
+    assert.equal(reader.prepare("SELECT COUNT(*) AS count FROM sqlite_schema WHERE name='account_balance'").get().count, 1);
+  } finally { reader.close(); }
+});
+
+test('cancellation between source statements stops later DDL and rolls back earlier writes', async t => {
+  const f = fixture(t), before = state(f.db), controller = new AbortController(), original = Adapter.prototype.script;
+  let laterRan = false;
+  Adapter.prototype.script = function(id, sql, filename) {
+    if (id !== 'source') return original.call(this, id, sql, filename);
+    const db = this.db(id), exec = db.exec;
+    db.exec = function(sql) {
+      const value = exec.call(this, sql);
+      if (sql.startsWith('UPDATE accounts')) controller.abort();
+      if (sql.startsWith('CREATE TABLE later')) laterRan = true;
+      return value;
+    };
+    try { return original.call(this, id, sql, filename); } finally { db.exec = exec; }
+  };
+  let report;
+  try { report = await run({ command: 'apply', db: f.db, migrations: [{ filename: '000001_cancel.sql', sql: 'UPDATE accounts SET balance=0; CREATE TABLE later(value);' }] }, { signal: controller.signal }); }
+  finally { Adapter.prototype.script = original; }
+  assert.equal(report.kind, 'cancelled'); assert.equal(report.stage, 'apply'); assert.equal(laterRan, false); assert.deepEqual(state(f.db), before);
 });

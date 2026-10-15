@@ -275,3 +275,82 @@ test "preconditions belong to the MoonBit engine and run after acquiring the loc
     @test.assert_eq(rejected.calls.contains("fingerprint"), false)
   }
 }
+
+///|
+priv struct VerificationDriver {
+  calls : Array[String]
+  invalid_result : Bool
+}
+
+///|
+impl @moonmolt.Driver for VerificationDriver with fn call(self, op, args) {
+  self.calls.push(op)
+  match op {
+    "load" => ToJson::to_json([source("000001_pending.sql")])
+    "open" => {
+      guard args is { "read_only": true, "create": false, "rebuild": false, .. } else {
+        raise @moonmolt.Database("verification must open read-only")
+      }
+      Json::null()
+    }
+    "begin_read" => Json::null()
+    "application_id" => 321
+    "history" => []
+    "fingerprint" => "same"
+    "verify" =>
+      if self.invalid_result {
+        Json::null()
+      } else {
+        { "integrity_check": "ok", "foreign_key_check": "ok" }
+      }
+    _ => raise @moonmolt.Database("unexpected operation \{op}")
+  }
+}
+
+///|
+test "verification is read-only, has no backup despite pending SQL, and checks host results" {
+  let request : @moonmolt.Request = {
+    command: "verify",
+    db: "backup.sqlite",
+    dir: "",
+    rebuild: false,
+    create: false,
+    to: None,
+    expected_application_id: Some(321),
+    expected_version: Some(0),
+  }
+  let driver = VerificationDriver::{ calls: [], invalid_result: false, }
+  let prepared = @moonmolt.prepare(driver, request)
+  @test.assert_eq(prepared.backup_required, false)
+  @test.assert_eq(prepared.pending.length(), 1)
+  let report = @moonmolt.complete(driver, prepared)
+  guard report
+    is { "command": "verify", "verified": true, "database_modified": false, .. } else {
+    fail("expected verified report")
+  }
+  @test.assert_eq(driver.calls, [
+    "load", "open", "begin_read", "application_id", "history", "verify", "fingerprint",
+  ])
+  let bad = VerificationDriver::{ calls: [], invalid_result: true, }
+  try @moonmolt.prepare(bad, request) catch {
+    @moonmolt.Database(_) => ()
+    _ => fail("expected invalid host result")
+  } noraise {
+    _ => fail("invalid results cannot claim verification")
+  }
+  for
+    invalid in [
+      { ..request, create: true, },
+      { ..request, rebuild: true, },
+      { ..request, to: Some(1), },
+    ] {
+    let rejected = VerificationDriver::{ calls: [], invalid_result: false, }
+    try @moonmolt.prepare(rejected, invalid) catch {
+      @moonmolt.Input(_) => ()
+      _ => fail("expected invalid verification options")
+    } noraise {
+      _ => fail("verification options must fail before opening")
+    }
+    @test.assert_eq(rejected.calls.length(), 0)
+  }
+}

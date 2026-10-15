@@ -1,6 +1,6 @@
 {
   "name": "moonmolt",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "SQLite migrations: rehearse, upgrade, retain your data",
   "repository": { "type": "git", "url": "https://github.com/q0w1ertyuiop/MoonMolt.git" },
   "type": "module",

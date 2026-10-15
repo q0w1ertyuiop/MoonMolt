@@ -187,6 +187,27 @@ export class Adapter {
     throw failure('policy', `${filename}: preserve ${JSON.stringify(name)}: require a finite scalar with text/blob at most 1 MiB`);
   }
 
+  validationRows(id, sql) {
+    const statement = this.db(id).prepare(sql);
+    statement.setReadBigInts(true);
+    const rows = [];
+    for (const row of statement.iterate()) {
+      this.throwIfCancelled();
+      rows.push(portable(row));
+      if (rows.length === 21) break;
+    }
+    return rows;
+  }
+
+  validate(id, full = false) {
+    const describe = rows => JSON.stringify(rows.slice(0, 20)) + (rows.length > 20 ? '; additional findings omitted' : '');
+    const fk = this.validationRows(id, 'PRAGMA main.foreign_key_check');
+    if (fk.length) throw failure('policy', `foreign key check failed: ${describe(fk)}`);
+    const integrity = this.validationRows(id, full ? 'PRAGMA main.integrity_check(21)' : 'PRAGMA main.quick_check(21)');
+    if (integrity.length !== 1 || Object.values(integrity[0])[0] !== 'ok') throw failure('policy', `integrity check failed: ${describe(integrity)}`);
+    return full ? { integrity_check: 'ok', foreign_key_check: 'ok' } : null;
+  }
+
   load(dir) {
     const source = (filename, bytes, checksBytes) => {
       try { return migrationSource(filename, bytes, checksBytes); }
@@ -231,13 +252,8 @@ export class Adapter {
         this.db(a.id).prepare(`INSERT INTO ${quote(HISTORY)} VALUES (?,?,?,?,?,?,?,?)`).run(e.version, e.name, e.checksum, e.applied_at, BigInt(e.duration_ms), e.schema_before, e.schema_after, e.tool_version);
         return null;
       }
-      case 'validate': {
-        const fk = this.query(a.id, 'PRAGMA foreign_key_check');
-        if (fk.length) throw failure('policy', `foreign key check failed: ${JSON.stringify(fk)}`);
-        const integrity = this.query(a.id, 'PRAGMA quick_check');
-        if (integrity.length !== 1 || Object.values(integrity[0])[0] !== 'ok') throw failure('policy', `integrity check failed: ${JSON.stringify(integrity)}`);
-        return null;
-      }
+      case 'validate': return this.validate(a.id);
+      case 'verify': return this.validate(a.id, true);
       case 'commit': {
         const db = this.db(a.id);
         try { db.exec('COMMIT;'); }
@@ -261,7 +277,7 @@ export class Adapter {
       const args = JSON.parse(json);
       if (op === 'open_clone') this.stage = 'rehearse';
       if (op === 'exec_script' || op === 'capture_value') this.stage = args.id === 'source' ? 'apply' : 'rehearse';
-      if (['load', 'begin', 'open_clone', 'exec_script', 'exec_check', 'capture_value', 'validate', 'commit'].includes(op)) {
+      if (['load', 'begin', 'open_clone', 'exec_script', 'exec_check', 'capture_value', 'validate', 'verify', 'commit'].includes(op)) {
         event = { stage: this.stage, operation: op, ...(args.id ? { connection: args.id } : {}), ...(args.filename ? { filename: args.filename } : {}), ...(args.name ? { check_name: args.name } : {}), ...(args.phase ? { phase: args.phase } : {}) };
         this.onProgress({ ...event, state: 'start' });
       }

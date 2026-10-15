@@ -6,6 +6,8 @@ const help = `MoonMolt · 月蜕 — 结构焕新，数据如初
 
 moonmolt inspect --db app.db [--format json]
 moonmolt status --db app.db --dir migrations [--to 3]
+moonmolt verify --db app.db --dir migrations [--worker] [--format json]
+                [--expected-application-id 1234] [--expected-version 3]
 moonmolt rehearse --db app.db --dir migrations [--rebuild]
 moonmolt apply --db app.db --dir migrations [--to 3] [--rebuild] [--create]
               [--backup-dir backups] [--busy-timeout-ms 5000] [--worker] [--progress]
@@ -21,7 +23,7 @@ SIGINT/SIGTERM request cooperative cancellation; use --worker for responsive sig
 function parse(argv) {
   if (!argv.length || argv.includes('--help') || argv[0] === 'help') return { help: true };
   const command = argv.shift();
-  if (!['inspect', 'status', 'rehearse', 'apply', 'plan'].includes(command)) throw new Error(`unknown command: ${command}`);
+  if (!['inspect', 'status', 'verify', 'rehearse', 'apply', 'plan'].includes(command)) throw new Error(`unknown command: ${command}`);
   const result = { command, format: 'text' };
   const bools = new Set(['--rebuild', '--create', '--allow-destructive', '--worker', '--progress']);
   const values = new Set(['--db', '--dir', '--to', '--format', '--before', '--after', '--hints', '--out', '--backup-dir', '--busy-timeout-ms', '--expected-application-id', '--expected-version']);
@@ -41,6 +43,7 @@ function parse(argv) {
   if (command !== 'plan') { allowed.add('worker'); allowed.add('progress'); }
   if (command !== 'plan') allowed.add('expected_application_id');
   if (command !== 'plan' && command !== 'inspect') allowed.add('expected_version');
+  if (command === 'verify') for (const key of ['to', 'rebuild', 'create']) allowed.delete(key);
   for (const key of Object.keys(result)) if (!allowed.has(key)) throw new Error(`${key} does not apply to ${command}`);
   if (command === 'plan') { if (!result.before || !result.after) throw new Error('plan requires --before and --after'); }
   else {
@@ -69,7 +72,7 @@ function text(report) {
   if (!report.ok) return `MoonMolt: ${report.kind}: ${report.message}${report.backup ? '\nBackup: ' + report.backup : ''}`;
   if (report.snapshot) return JSON.stringify(report.snapshot, null, 2);
   if (report.sql !== undefined) return report.sql + (report.requires_rebuild ? '\nApply this draft with --rebuild after review.\n' : '');
-  if (report.command === 'status') return `Application ID: ${report.application_id}\nCurrent version: ${report.current_version}\nApplied: ${report.applied.length}\nPending: ${report.pending.join(', ') || 'none'}`;
+  if (report.command === 'status' || report.command === 'verify') return `${report.command === 'verify' ? 'Database verification passed (integrity and foreign keys).\n' : ''}Application ID: ${report.application_id}\nCurrent version: ${report.current_version}\nApplied: ${report.applied.length}\nPending: ${report.pending.join(', ') || 'none'}`;
   if (report.noop) return 'Database is up to date. No migration or backup created.';
   const applied = report.result?.applied ?? report.rehearsal?.applied ?? [];
   const checks = report.result?.checks ?? report.rehearsal?.checks ?? [];

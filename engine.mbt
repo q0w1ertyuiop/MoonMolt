@@ -55,9 +55,15 @@ pub fn prepare(
 ) -> Prepared raise MigrationError {
   guard request.command == "inspect" ||
     request.command == "status" ||
+    request.command == "verify" ||
     request.command == "rehearse" ||
     request.command == "apply" else {
     raise Input("unknown command \{request.command}")
+  }
+  if request.command == "verify" {
+    guard request.to is None && !request.rebuild && !request.create else {
+      raise Input("verify does not accept to, rebuild or create")
+    }
   }
   if request.expected_version is Some(version) {
     guard request.command != "inspect" && version >= 0 && version <= 999999 else {
@@ -129,14 +135,33 @@ pub fn prepare(
   }
   let pending = pending_migrations(migrations, history, request.to)
   check_drift(driver, "source", history)
-  let report : Json = {
-    "ok": true,
-    "command": ToJson::to_json(request.command),
-    "applied": ToJson::to_json(history),
-    "pending": ToJson::to_json(pending.map(m => m.filename)),
-    "noop": ToJson::to_json(pending.is_empty()),
-    "current_version": ToJson::to_json(current_version),
-    "application_id": ToJson::to_json(application_id),
+  let report : Json = if request.command == "verify" {
+    let validation = driver.call("verify", { "id": "source" })
+    guard validation
+      is { "integrity_check": "ok", "foreign_key_check": "ok", .. } else {
+      raise Database("host returned invalid verification results")
+    }
+    {
+      "ok": true,
+      "command": "verify",
+      "verified": true,
+      "database_modified": false,
+      "applied": ToJson::to_json(history),
+      "pending": ToJson::to_json(pending.map(m => m.filename)),
+      "current_version": ToJson::to_json(current_version),
+      "application_id": ToJson::to_json(application_id),
+      "validation": validation,
+    }
+  } else {
+    {
+      "ok": true,
+      "command": ToJson::to_json(request.command),
+      "applied": ToJson::to_json(history),
+      "pending": ToJson::to_json(pending.map(m => m.filename)),
+      "noop": ToJson::to_json(pending.is_empty()),
+      "current_version": ToJson::to_json(current_version),
+      "application_id": ToJson::to_json(application_id),
+    }
   }
   let fingerprint : String = decode(
     driver.call("fingerprint", { "id": "source" }),
@@ -147,7 +172,10 @@ pub fn prepare(
   {
     request,
     pending,
-    backup_required: request.command != "status" && !pending.is_empty(),
+    backup_required: (
+      request.command == "apply" || request.command == "rehearse"
+    ) &&
+    !pending.is_empty(),
     report,
     fingerprint,
     history,
@@ -234,7 +262,7 @@ fn apply_batch(
       duration_ms: finish - start,
       schema_before: before,
       schema_after: after,
-      tool_version: "0.6.0",
+      tool_version: "0.7.0",
     }
     ignore(
       driver.call("history_insert", {

@@ -7,7 +7,7 @@ export interface MigrationFile {
   checks_json?: string;
 }
 export interface RunRequest {
-  command?: 'inspect' | 'status' | 'rehearse' | 'apply';
+  command?: 'inspect' | 'status' | 'verify' | 'rehearse' | 'apply';
   db: string;
   dir?: string;
   /** Bundled migrations instead of dir; captured immediately, checksummed by the engine host. */
@@ -50,6 +50,7 @@ export interface ReportPaths {
   report_warning?: string;
 }
 export type RunSuccess = ReportPaths & (
+  | { ok: true; command: 'verify'; verified: true; database_modified: false; applied: HistoryEntry[]; pending: string[]; current_version: number; application_id: number; validation: { integrity_check: 'ok'; foreign_key_check: 'ok' } }
   | { ok: true; snapshot: { objects: Json[]; tables: Json[]; fingerprint: string; sqlite_version: string; application_id: number } }
   | { ok: true; command: 'status'; applied: HistoryEntry[]; pending: string[]; noop: boolean; current_version: number; application_id: number }
   | { ok: true; command: 'apply' | 'rehearse'; applied: HistoryEntry[]; pending: []; noop: true; current_version: number; application_id: number }
@@ -68,7 +69,7 @@ export type RunReport = RunSuccess | Failure;
 /** Captures values and resolves relative paths immediately; owns queued connection lifecycle. */
 export interface ProgressEvent {
   stage: 'prepare' | 'backup' | 'rehearse' | 'apply';
-  operation: 'session' | 'load' | 'begin' | 'open_clone' | 'exec_script' | 'exec_check' | 'capture_value' | 'validate' | 'commit' | 'backup';
+  operation: 'session' | 'load' | 'begin' | 'open_clone' | 'exec_script' | 'exec_check' | 'capture_value' | 'validate' | 'verify' | 'commit' | 'backup';
   state: 'start' | 'progress' | 'complete' | 'failed';
   sequence: number;
   timestamp: string;
