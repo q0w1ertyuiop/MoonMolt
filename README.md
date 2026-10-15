@@ -35,6 +35,7 @@ migrations/
 ```sh
 node node/cli.mjs inspect --db app.db --format json
 node node/cli.mjs status --db app.db --dir migrations
+node node/cli.mjs verify --db app.db --dir migrations --worker
 node node/cli.mjs rehearse --db app.db --dir migrations
 node node/cli.mjs apply --db app.db --dir migrations --to 2
 node node/cli.mjs apply --db app.db --dir migrations --rebuild
@@ -179,6 +180,30 @@ SQL 和检查文件在准备阶段一次性读取；检查文件的原始字节�
 
 运行 `npm run demo:preserve` 可重现“重建时遗漏订单被拒绝 → 修正待执行脚本 → 精确保留大整数金额 → 重复升级无操作”的完整流程，示例见 [examples/preservation.mjs](examples/preservation.mjs)。
 
+## 只读验证数据库与备份（0.7.0）
+
+`status` 检查版本、历史和结构漂移。需要在恢复备份前或应用维护时核查当前文件的外键、表与索引一致性，可以使用独立的 `verify`：
+
+```sh
+node node/cli.mjs verify --db backups/before.sqlite --dir migrations --worker --format json
+```
+
+```js
+const report = await runInWorker({
+  command: 'verify', db: 'backups/before.sqlite', migrations,
+  expected_application_id: 1297042516,
+  // expected_version: 3,
+});
+if (!report.ok) throw new Error(`${report.kind}: ${report.message}`);
+console.log(report.verified, report.current_version, report.pending);
+```
+
+验证使用只读连接，在同一个读事务内检查应用标识、版本、历史文件校验和、结构漂移、`foreign_key_check` 与完整的 `integrity_check`。与迁移结束时的 `quick_check` 相比，完整检查还核对索引和表中记录的一致性；大库可使用 Worker 保持调用方响应。一次活动的 SQLite 检查仍可能延迟取消，`busy_timeout_ms` 只控制锁等待。
+
+文件与内存迁移集合都支持。需要提供该数据库完整的已执行迁移前缀；未受 MoonMolt 管理的数据库可在库接口中显式传 `migrations: []`。验证不会运行待迁移 SQL、历史 `checks / preserve`，也不会执行修复、创建数据库、生成新备份或报告文件；`to / rebuild / create / backup_dir` 不适用。恢复前备份通常仍有待升级版本，`pending` 非空不表示备份损坏。成功报告包含 `verified: true`、`database_modified: false` 和 `validation` 两项检查结果。
+
+每项 SQLite 检查的错误最多展示 20 条，存在更多问题时明确标记省略；迁移执行中的错误报告也采用相同限制。`verify` 表示所读快照在这些结构与历史检查下通过，不证明业务内容正确、待迁移 SQL 正确，或选中的文件就是期望的用户数据。恢复操作仍按 [恢复说明](docs/restore.md)停机完成。`npm run demo:preserve` 同时演示升级后核验原库与升级前备份。
+
 ## Schema 辅助规划
 
 ```sh
@@ -207,7 +232,7 @@ node node/cli.mjs plan --before examples/before.json --after examples/after.json
 
 请在应用启动或维护窗口执行，暂停应用写入。默认外键检查开启；`--rebuild` 会在事务外关闭本批外键约束，并在提交前检查所有引用。该模式下级联更新／删除不会自动发生，脚本需要明确维护相关数据。重建表请按“创建新表 → 明确列映射复制 → 删除旧表 → 重命名 → 恢复索引、触发器和视图”的顺序操作。
 
-脚本不能自行控制事务、保存点、附加数据库、修改迁移历史或修改 PRAGMA 配置。允许无参数的只读外键检查，以支持生成 SQL 的检查步骤。脚本整体交给 SQLite 执行，字符串中的分号和触发器 `BEGIN / END` 不会被错误切分。
+脚本不能自行控制事务、保存点、附加数据库、修改迁移历史或修改 PRAGMA 配置。允许无参数的只读外键检查，以支持生成 SQL 的检查步骤。语句边界由 SQLite 自己解析，再逐条执行；字符串中的分号和触发器 `BEGIN / END` 不会被错误切分。每条语句编译后检查未绑定参数，禁止把遗留的 `? / :name / @name / $name` 悄悄当成 NULL 写入数据库；字符串和标识符中的相同文字不受影响。已经执行的历史脚本不会重新运行。
 
 备份位于 `<数据库路径>.moonmolt-backups/`，每次使用唯一文件名，旁边保存 JSON 执行报告；恢复步骤见 [备份恢复说明](docs/restore.md)。演练不会验证全部业务逻辑，也不能预先保证磁盘或进程在后续不会出错。若返回 `commit_outcome_unknown`，先检查历史，禁止盲目重放。
 

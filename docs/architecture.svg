@@ -16,7 +16,7 @@
   <text x="1150" y="60" class="small" text-anchor="end">MoonBit 核心 + Node.js 适配器</text>
   <rect x="40" y="160" width="260" height="150" rx="14" class="box"/>
   <text x="60" y="195" class="heading">CLI / 应用调用</text>
-  <text x="60" y="230" class="body">status · plan · apply</text>
+  <text x="60" y="230" class="body">status · verify · plan · apply</text>
   <text x="60" y="259" class="body">文件 / 内存集合 + SHA-256</text>
   <text x="60" y="287" class="small">结构模型 → SQL 草稿</text>
   <rect x="340" y="160" width="450" height="215" rx="14" class="core"/>
@@ -30,7 +30,7 @@
   <text x="850" y="196" class="heading">Node.js：宿主操作</text>
   <text x="850" y="232" class="body">node:sqlite · 参数绑定</text>
   <text x="850" y="263" class="body">文件读取 · 指纹 · 在线备份</text>
-  <text x="850" y="294" class="body">Authorizer 限制脚本操作</text>
+  <text x="850" y="294" class="body">脚本参数保护 · 只读完整核验</text>
   <text x="850" y="327" class="small">关闭连接 · 回滚 · 清理临时副本</text>
   <text x="850" y="353" class="small">独立 Worker；原子取消标记与进度通知</text>
   <path d="M300 230H335" class="line"/>

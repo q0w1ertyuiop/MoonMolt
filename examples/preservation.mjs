@@ -41,8 +41,15 @@ try {
   assert.equal(upgraded.ok, true, JSON.stringify(upgraded));
   assert.deepEqual(state().map(({ status, ...row }) => row), before);
   assert.equal((await runInWorker({ command: 'apply', db, migrations })).noop, true);
+  const backupVerification = await runInWorker({ command: 'verify', db: upgraded.backup, migrations, expected_version: 0 });
+  assert.equal(backupVerification.ok, true, JSON.stringify(backupVerification));
+  assert.equal(backupVerification.pending.length, 1);
+  const sourceVerification = await runInWorker({ command: 'verify', db, migrations, expected_version: 1 });
+  assert.equal(sourceVerification.ok, true, JSON.stringify(sourceVerification));
   console.log(JSON.stringify({ rejected_lossy_upgrade: rejected.kind, source_unchanged_after_failure: true,
-    preserved: upgraded.result.preserved, business_checks: upgraded.result.checks, repeat_noop: true }, null, 2));
+    preserved: upgraded.result.preserved, business_checks: upgraded.result.checks, repeat_noop: true,
+    backup_verification: { verified: backupVerification.verified, current_version: backupVerification.current_version, pending: backupVerification.pending },
+    source_verification: sourceVerification.validation }, null, 2));
 } finally {
   assert.equal(root.startsWith(join(tmpdir(), 'moonmolt-preservation-demo-')), true);
   rmSync(root, { recursive: true, force: true });
