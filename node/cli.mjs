@@ -13,7 +13,8 @@ moonmolt plan --before v1.json --after v2.json [--hints renames.json]
               [--allow-destructive] [--out upgrade.sql] [--format json]
 
 Node.js >=24.10.0. No down migrations. Apply always rehearses first.
-Exit codes: 0 success, 1 input/database/runtime, 2 history/policy, 3 lock timeout.
+Exit codes: 0 success, 1 input/database/runtime, 2 history/policy, 3 lock timeout, 4 cancelled.
+SIGINT/SIGTERM request cooperative cancellation; use --worker for responsive signals.
 `;
 
 function parse(argv) {
@@ -80,7 +81,11 @@ try {
     const onProgress = options.progress ? event => {
       console.error(format === 'json' ? JSON.stringify({ type: 'progress', ...event }) : `${event.stage}: ${event.operation} ${event.state}${event.filename ? ' ' + event.filename : ''}`);
     } : undefined;
-    report = await (options.worker ? runInWorker : run)(options, { onProgress });
+    const cancellation = new AbortController();
+    const cancel = () => cancellation.abort();
+    process.on('SIGINT', cancel); process.on('SIGTERM', cancel);
+    try { report = await (options.worker ? runInWorker : run)(options, { onProgress, signal: cancellation.signal }); }
+    finally { process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel); }
   }
 } catch (error) { report = { ok: false, kind: 'input', exit_code: 1, message: error.message }; }
 console[report.ok ? 'log' : 'error'](format === 'json' ? JSON.stringify(report) : text(report));

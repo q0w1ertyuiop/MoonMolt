@@ -106,3 +106,14 @@ test "optional business checks preserve SQL-only inputs and reject duplicate nam
     }
   }
 }
+
+///|
+test "cancellation has a distinct transport category and exit code" {
+  let report = @moonmolt.error_json(@moonmolt.Cancelled("requested"))
+  @test.assert_eq(report, {
+    "ok": false,
+    "kind": "cancelled",
+    "exit_code": 4,
+    "message": "requested",
+  })
+}

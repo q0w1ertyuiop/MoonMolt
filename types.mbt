@@ -6,6 +6,7 @@ pub(all) suberror MigrationError {
   Database(String)
   LockTimeout(String)
   CommitOutcomeUnknown(String)
+  Cancelled(String)
 } derive(Debug)
 
 ///|
@@ -93,6 +94,7 @@ pub fn error_json(error : MigrationError) -> Json {
     Database(s) => ("database", 1, s)
     LockTimeout(s) => ("lock_timeout", 3, s)
     CommitOutcomeUnknown(s) => ("commit_outcome_unknown", 1, s)
+    Cancelled(s) => ("cancelled", 4, s)
   }
   {
     "ok": false,

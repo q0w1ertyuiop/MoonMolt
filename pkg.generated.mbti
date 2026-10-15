@@ -35,6 +35,7 @@ pub(all) suberror MigrationError {
   Database(String)
   LockTimeout(String)
   CommitOutcomeUnknown(String)
+  Cancelled(String)
 } derive(@debug.Debug)
 pub fn MigrationError::to_repr(Self) -> @debug.Repr
 

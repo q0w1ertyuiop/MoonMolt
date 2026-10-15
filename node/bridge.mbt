@@ -18,6 +18,7 @@ impl @core.Driver for NodeDriver with fn call(_self, op, args) {
         "policy" => raise @core.Policy(message)
         "lock_timeout" => raise @core.LockTimeout(message)
         "commit_outcome_unknown" => raise @core.CommitOutcomeUnknown(message)
+        "cancelled" => raise @core.Cancelled(message)
         _ => raise @core.Database(message)
       }
     _ => raise @core.Database("invalid host response envelope")

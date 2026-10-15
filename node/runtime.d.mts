@@ -44,8 +44,8 @@ export type RunSuccess = ReportPaths & (
 );
 export interface Failure extends ReportPaths {
   ok: false;
-  kind: 'input' | 'history_mismatch' | 'policy' | 'database' | 'lock_timeout' | 'commit_outcome_unknown' | 'runtime' | 'cleanup';
-  exit_code: 1 | 2 | 3;
+  kind: 'input' | 'history_mismatch' | 'policy' | 'database' | 'lock_timeout' | 'commit_outcome_unknown' | 'runtime' | 'cleanup' | 'cancelled';
+  exit_code: 1 | 2 | 3 | 4;
   message: string;
   cleanup_warnings?: string[];
   completed?: RunSuccess;
@@ -67,6 +67,8 @@ export interface ProgressEvent {
   ok?: boolean;
 }
 export interface RunOptions {
+  /** Cooperative cancellation before commit; does not interrupt an active SQLite call. */
+  signal?: AbortSignal;
   /** Synchronous observer; callback failures become bounded report warnings. */
   onProgress?: (event: Readonly<ProgressEvent>) => void;
 }

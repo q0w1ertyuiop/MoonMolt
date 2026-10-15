@@ -49,11 +49,12 @@ export class Adapter {
   backupComplete = false;
   stage = 'prepare';
 
-  constructor({ busy_timeout_ms = 5000, backup_dir, onProgress = () => {} } = {}) {
+  constructor({ busy_timeout_ms = 5000, backup_dir, onProgress = () => {}, isCancelled = () => false } = {}) {
     if (!Number.isInteger(busy_timeout_ms) || busy_timeout_ms < 0 || busy_timeout_ms > 2147483647) throw failure('input', 'invalid busy_timeout_ms');
     this.busyTimeout = busy_timeout_ms;
     this.backupDir = backup_dir;
     this.onProgress = onProgress;
+    this.isCancelled = isCancelled;
     const [major, minor] = process.versions.node.split('.').map(Number);
     if (major < 24 || (major === 24 && minor < 10)) throw failure('input', 'MoonMolt requires Node.js >=24.10.0');
     if (typeof DatabaseSync.prototype.setAuthorizer !== 'function' || typeof backup !== 'function') throw failure('input', 'node:sqlite authorizer and backup APIs are required');
@@ -63,6 +64,10 @@ export class Adapter {
     const connection = this.connections.get(id);
     if (!connection) throw failure('database', `connection ${id} is not open`);
     return connection.db;
+  }
+
+  throwIfCancelled() {
+    if (this.isCancelled()) throw failure('cancelled', 'migration cancelled before commit; active transaction will be rolled back');
   }
 
   query(id, sql, ...params) {
@@ -124,6 +129,7 @@ export class Adapter {
     let denied = null;
     const controls = new Set([C.SQLITE_TRANSACTION, C.SQLITE_SAVEPOINT, C.SQLITE_ATTACH, C.SQLITE_DETACH, C.SQLITE_PRAGMA]);
     db.setAuthorizer((action, a, b, database) => {
+      if (this.isCancelled()) return C.SQLITE_DENY;
       const reserved = value => typeof value === 'string' && value.toLowerCase().startsWith('__moonmigrate_');
       // The upstream rebuild guard uses the pragma_foreign_key_check table-valued
       // function. SQLite authorizes that read as SQLITE_PRAGMA as well.
@@ -135,7 +141,7 @@ export class Adapter {
       return C.SQLITE_OK;
     });
     try { db.exec(sql); }
-    catch (error) { throw denied ? failure('policy', `${filename}: ${denied}`) : Object.assign(error, { message: `${filename}: ${error.message}` }); }
+    catch (error) { this.throwIfCancelled(); throw denied ? failure('policy', `${filename}: ${denied}`) : Object.assign(error, { message: `${filename}: ${error.message}` }); }
     finally { db.setAuthorizer(null); }
     if (!db.isTransaction) throw failure('policy', `${filename}: transaction ended unexpectedly`);
   }
@@ -147,6 +153,7 @@ export class Adapter {
     const reads = new Set([C.SQLITE_SELECT, C.SQLITE_READ, C.SQLITE_FUNCTION, C.SQLITE_RECURSIVE]);
     let denied = false;
     db.setAuthorizer((action, a, b, database) => {
+      if (this.isCancelled()) return C.SQLITE_DENY;
       const reserved = value => typeof value === 'string' && value.toLowerCase().startsWith('__moonmigrate_');
       if (!reads.has(action) || reserved(a) || reserved(b) || (database && !['main', 'temp'].includes(database))) {
         denied = true; return C.SQLITE_DENY;
@@ -168,6 +175,7 @@ export class Adapter {
       }
       return null;
     } catch (error) {
+      this.throwIfCancelled();
       if (denied) throw failure('policy', `${label}: business checks must be read-only`);
       if (error.kind) throw error;
       throw failure('policy', `${label}: ${error.message}`);
@@ -241,6 +249,7 @@ export class Adapter {
   call(op, json) {
     let event;
     try {
+      this.throwIfCancelled();
       const args = JSON.parse(json);
       if (op === 'open_clone') this.stage = 'rehearse';
       if (op === 'exec_script') this.stage = args.id === 'source' ? 'apply' : 'rehearse';
@@ -248,12 +257,16 @@ export class Adapter {
         event = { stage: this.stage, operation: op, ...(args.id ? { connection: args.id } : {}), ...(args.filename ? { filename: args.filename } : {}), ...(args.name ? { check_name: args.name } : {}) };
         this.onProgress({ ...event, state: 'start' });
       }
+      this.throwIfCancelled();
       const value = this.dispatch(op, args);
       if (event) this.onProgress({ ...event, state: 'complete' });
       return JSON.stringify({ ok: true, value });
     }
     catch (error) {
       if (event) this.onProgress({ ...event, state: 'failed' });
+      if (this.isCancelled() && error.kind !== 'commit_outcome_unknown') {
+        return JSON.stringify({ ok: false, kind: 'cancelled', message: 'migration cancelled at a safe operation boundary; active transaction will be rolled back' });
+      }
       const busy = error.errcode === 5 || error.errcode === 6 || /database is (locked|busy)/i.test(error.message);
       const kind = error.kind ?? (busy ? 'lock_timeout' : error.errcode !== undefined ? 'database' : error instanceof TypeError || error.code?.startsWith('E') ? 'input' : 'database');
       return JSON.stringify({ ok: false, kind, message: error.message });
