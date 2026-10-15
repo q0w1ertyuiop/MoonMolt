@@ -128,10 +128,10 @@ export class Adapter {
     if (!db.isTransaction) throw failure('policy', `${filename}: transaction ended unexpectedly`);
   }
 
-  check(id, sql, name, filename) {
+  scalar(id, sql, name, filename, mode = 'check') {
     const db = this.db(id);
     if (!db.isTransaction) throw failure('policy', 'business checks require an active engine transaction');
-    const label = `${filename}: check ${JSON.stringify(name)}`;
+    const label = `${filename}: ${mode} ${JSON.stringify(name)}`;
     const reads = new Set([C.SQLITE_SELECT, C.SQLITE_READ, C.SQLITE_FUNCTION, C.SQLITE_RECURSIVE]);
     let denied = false;
     db.setAuthorizer((action, a, b, database) => {
@@ -155,10 +155,10 @@ export class Adapter {
       statement.setReadBigInts(true); statement.setReturnArrays(true);
       iterator = statement.iterate();
       const first = iterator.next(), second = iterator.next();
-      if (first.done || !second.done || first.value.length !== 1 || first.value[0] !== 1n) {
-        throw failure('policy', `${label}: expected exactly one row and one INTEGER 1 result`);
+      if (first.done || !second.done || first.value.length !== 1) {
+        throw failure('policy', `${label}: expected exactly one row and one column`);
       }
-      return null;
+      return first.value[0];
     } catch (error) {
       this.throwIfCancelled();
       if (denied) throw failure('policy', `${label}: business checks must be read-only`);
@@ -167,6 +167,23 @@ export class Adapter {
     } finally {
       try { iterator?.return(); } finally { db.setAuthorizer(null); }
     }
+  }
+
+  check(id, sql, name, filename) {
+    const value = this.scalar(id, sql, name, filename);
+    if (value !== 1n) throw failure('policy', `${filename}: check ${JSON.stringify(name)}: expected exactly one INTEGER 1 result`);
+    return null;
+  }
+
+  captureValue(id, sql, name, filename) {
+    const value = this.scalar(id, sql, name, filename, 'preserve');
+    // Keep SQLite storage classes distinct. Integers never pass through Number.
+    if (value === null) return { type: 'null' };
+    if (typeof value === 'bigint') return { type: 'integer', value: String(value) };
+    if (typeof value === 'number' && Number.isFinite(value)) return { type: 'real', value: String(value) };
+    if (typeof value === 'string' && Buffer.byteLength(value, 'utf8') <= 1048576) return { type: 'text', value };
+    if (value instanceof Uint8Array && value.byteLength <= 1048576) return { type: 'blob', value: Buffer.from(value).toString('base64') };
+    throw failure('policy', `${filename}: preserve ${JSON.stringify(name)}: require a finite scalar with text/blob at most 1 MiB`);
   }
 
   load(dir) {
@@ -207,6 +224,7 @@ export class Adapter {
       case 'history_init': this.history(a.id); this.db(a.id).exec(HISTORY_DDL.replace('CREATE TABLE ', 'CREATE TABLE IF NOT EXISTS ') + ';'); return null;
       case 'exec_script': this.stage = a.id === 'source' ? 'apply' : 'rehearse'; this.script(a.id, a.sql, a.filename); return null;
       case 'exec_check': return this.check(a.id, a.sql, a.name, a.filename);
+      case 'capture_value': return this.captureValue(a.id, a.sql, a.name, a.filename);
       case 'history_insert': {
         const e = a.entry;
         this.db(a.id).prepare(`INSERT INTO ${quote(HISTORY)} VALUES (?,?,?,?,?,?,?,?)`).run(e.version, e.name, e.checksum, e.applied_at, BigInt(e.duration_ms), e.schema_before, e.schema_after, e.tool_version);
@@ -241,9 +259,9 @@ export class Adapter {
       this.throwIfCancelled();
       const args = JSON.parse(json);
       if (op === 'open_clone') this.stage = 'rehearse';
-      if (op === 'exec_script') this.stage = args.id === 'source' ? 'apply' : 'rehearse';
-      if (['load', 'begin', 'open_clone', 'exec_script', 'exec_check', 'validate', 'commit'].includes(op)) {
-        event = { stage: this.stage, operation: op, ...(args.id ? { connection: args.id } : {}), ...(args.filename ? { filename: args.filename } : {}), ...(args.name ? { check_name: args.name } : {}) };
+      if (op === 'exec_script' || op === 'capture_value') this.stage = args.id === 'source' ? 'apply' : 'rehearse';
+      if (['load', 'begin', 'open_clone', 'exec_script', 'exec_check', 'capture_value', 'validate', 'commit'].includes(op)) {
+        event = { stage: this.stage, operation: op, ...(args.id ? { connection: args.id } : {}), ...(args.filename ? { filename: args.filename } : {}), ...(args.name ? { check_name: args.name } : {}), ...(args.phase ? { phase: args.phase } : {}) };
         this.onProgress({ ...event, state: 'start' });
       }
       this.throwIfCancelled();

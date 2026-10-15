@@ -39,6 +39,7 @@ export interface BatchResult {
   applied: HistoryEntry[];
   fingerprint: string;
   checks: { version: number; filename: string; name: string; ok: true }[];
+  preserved: { version: number; filename: string; name: string; ok: true }[];
 }
 export interface ReportPaths {
   progress_warnings?: string[];
@@ -67,13 +68,14 @@ export type RunReport = RunSuccess | Failure;
 /** Captures values and resolves relative paths immediately; owns queued connection lifecycle. */
 export interface ProgressEvent {
   stage: 'prepare' | 'backup' | 'rehearse' | 'apply';
-  operation: 'session' | 'load' | 'begin' | 'open_clone' | 'exec_script' | 'exec_check' | 'validate' | 'commit' | 'backup';
+  operation: 'session' | 'load' | 'begin' | 'open_clone' | 'exec_script' | 'exec_check' | 'capture_value' | 'validate' | 'commit' | 'backup';
   state: 'start' | 'progress' | 'complete' | 'failed';
   sequence: number;
   timestamp: string;
   connection?: 'source' | 'clone';
   filename?: string;
   check_name?: string;
+  phase?: 'before' | 'after';
   backup?: string;
   remaining_pages?: number;
   total_pages?: number;

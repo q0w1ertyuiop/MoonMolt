@@ -73,7 +73,8 @@ function text(report) {
   if (report.noop) return 'Database is up to date. No migration or backup created.';
   const applied = report.result?.applied ?? report.rehearsal?.applied ?? [];
   const checks = report.result?.checks ?? report.rehearsal?.checks ?? [];
-  return `${report.command === 'rehearse' ? 'Rehearsed' : 'Applied'} ${applied.length} migration(s): ${applied.map(m => m.version).join(', ')}${checks.length ? '\nBusiness checks passed: ' + checks.length : ''}${report.backup ? '\nBackup: ' + report.backup : ''}`;
+  const preserved = report.result?.preserved ?? report.rehearsal?.preserved ?? [];
+  return `${report.command === 'rehearse' ? 'Rehearsed' : 'Applied'} ${applied.length} migration(s): ${applied.map(m => m.version).join(', ')}${checks.length ? '\nBusiness checks passed: ' + checks.length : ''}${preserved.length ? '\nPreservation checks passed: ' + preserved.length : ''}${report.backup ? '\nBackup: ' + report.backup : ''}`;
 }
 
 let report;

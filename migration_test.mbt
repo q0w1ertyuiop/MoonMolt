@@ -4,7 +4,7 @@ fn source(
   checksum? : String = "sha",
   sql? : String = "SELECT 1;",
 ) -> @moonmolt.MigrationSource {
-  { filename, checksum, sql, checks: None, }
+  { filename, checksum, sql, checks: None, preserve: None, }
 }
 
 ///|
@@ -105,6 +105,112 @@ test "optional business checks preserve SQL-only inputs and reject duplicate nam
       _ => fail("invalid business checks must fail")
     }
   }
+}
+
+///|
+test "preservation groups reject empty lists and names shared with ordinary checks" {
+  let original = source("000001_first.sql")
+  let query : @moonmolt.MigrationCheck = {
+    name: "count",
+    sql: "SELECT COUNT(*) FROM orders;",
+  }
+  @test.assert_eq(
+    @moonmolt.load_migrations([{ ..original, preserve: Some([query]), }])[0].preserve,
+    Some([query]),
+  )
+  for
+    invalid in [
+      { ..original, preserve: Some([]), },
+      { ..original, preserve: Some([query, query]), },
+      { ..original, checks: Some([query]), preserve: Some([query]), },
+    ] {
+    try @moonmolt.load_migrations([invalid]) catch {
+      @moonmolt.Input(_) => ()
+      _ => fail("expected invalid verification group")
+    } noraise {
+      _ => fail("invalid verification must fail")
+    }
+  }
+}
+
+///|
+priv struct PreservationDriver {
+  calls : Array[String]
+  corrupt : Bool
+}
+
+///|
+impl @moonmolt.Driver for PreservationDriver with fn call(self, op, args) {
+  self.calls.push(
+    match args {
+      { "id": String(id), "phase": String(phase), .. } => "\{op}:\{id}:\{phase}"
+      { "id": String(id), .. } => "\{op}:\{id}"
+      _ => op
+    },
+  )
+  match op {
+    "load" =>
+      ToJson::to_json([
+        {
+          ..source("000001_first.sql"),
+          preserve: Some([{ name: "value", sql: "SELECT amount FROM orders;", }]),
+        },
+      ])
+    "history" | "sequences" => []
+    "application_id" => 1234
+    "fingerprint" => "same"
+    "clock" => "0"
+    "timestamp" => "now"
+    "capture_value" =>
+      if self.corrupt && args is { "phase": "after", .. } {
+        { "type": "integer", "value": "9007199254740992" }
+      } else {
+        { "type": "integer", "value": "9007199254740993" }
+      }
+    _ => Json::null()
+  }
+}
+
+///|
+test "engine compares exact captured values before writing history or committing" {
+  let request : @moonmolt.Request = {
+    command: "apply",
+    db: "app.db",
+    dir: "",
+    rebuild: false,
+    create: false,
+    to: None,
+    expected_application_id: None,
+    expected_version: None,
+  }
+  let good = PreservationDriver::{ calls: [], corrupt: false, }
+  let result = @moonmolt.complete(good, @moonmolt.prepare(good, request))
+  guard result
+    is { "ok": true, "result": { "preserved": Array(items), .. }, .. } else {
+    fail("expected successful preservation report")
+  }
+  @test.assert_eq(items.length(), 1)
+  let operations = good.calls.filter(op => {
+    op.has_prefix("capture_value") ||
+    op.has_prefix("exec_script") ||
+    op.has_prefix("history_insert") ||
+    op.has_prefix("commit")
+  })
+  @test.assert_eq(operations, [
+    "capture_value:clone:before", "exec_script:clone", "capture_value:clone:after",
+    "history_insert:clone", "commit:clone", "capture_value:source:before", "exec_script:source",
+    "capture_value:source:after", "history_insert:source", "commit:source",
+  ])
+  let bad = PreservationDriver::{ calls: [], corrupt: true, }
+  try @moonmolt.complete(bad, @moonmolt.prepare(bad, request)) catch {
+    @moonmolt.Policy(_) => ()
+    _ => fail("expected preservation policy failure")
+  } noraise {
+    _ => fail("changed value must fail")
+  }
+  @test.assert_eq(bad.calls.contains("history_insert:clone"), false)
+  @test.assert_eq(bad.calls.contains("commit:clone"), false)
+  @test.assert_eq(bad.calls.contains("exec_script:source"), false)
 }
 
 ///|

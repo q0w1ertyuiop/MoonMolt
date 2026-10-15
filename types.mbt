@@ -17,6 +17,7 @@ pub(all) struct Migration {
   checksum : String
   sql : String
   checks : Array[MigrationCheck]?
+  preserve : Array[MigrationCheck]?
 } derive(Debug, Eq, ToJson, @json.FromJson)
 
 ///|
@@ -43,6 +44,7 @@ pub(all) struct MigrationSource {
   checksum : String
   sql : String
   checks : Array[MigrationCheck]?
+  preserve : Array[MigrationCheck]?
 } derive(Debug, ToJson, @json.FromJson)
 
 ///|

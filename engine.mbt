@@ -164,6 +164,7 @@ fn apply_batch(
   ignore(driver.call("history_init", { "id": ToJson::to_json(id) }))
   let applied : Array[HistoryEntry] = []
   let verified : Array[Json] = []
+  let preserved : Array[Json] = []
   for migration in migrations {
     let sequences : Array[SequenceState] = decode(
       driver.call("sequences", { "id": ToJson::to_json(id) }),
@@ -172,6 +173,7 @@ fn apply_batch(
       driver.call("fingerprint", { "id": ToJson::to_json(id) }),
     )
     let start : Int64 = decode(driver.call("clock", {}))
+    let baseline = capture_preserved(driver, id, migration)
     ignore(
       driver.call("exec_script", {
         "id": ToJson::to_json(id),
@@ -216,6 +218,9 @@ fn apply_batch(
         })
       }
     }
+    for entry in verify_preserved(driver, id, migration, baseline) {
+      preserved.push(entry)
+    }
     let after : String = decode(
       driver.call("fingerprint", { "id": ToJson::to_json(id) }),
     )
@@ -229,7 +234,7 @@ fn apply_batch(
       duration_ms: finish - start,
       schema_before: before,
       schema_after: after,
-      tool_version: "0.5.0",
+      tool_version: "0.6.0",
     }
     ignore(
       driver.call("history_insert", {
@@ -245,6 +250,7 @@ fn apply_batch(
     "applied": ToJson::to_json(applied),
     "fingerprint": fingerprint,
     "checks": ToJson::to_json(verified),
+    "preserved": ToJson::to_json(preserved),
   }
 }
 

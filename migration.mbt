@@ -30,18 +30,22 @@ pub fn load_migrations(
         )
       }
     }
-    if source.checks is Some(checks) {
-      guard !checks.is_empty() else {
-        raise Input("empty business checks in \{file}")
-      }
-      let names : Array[String] = []
-      for check in checks {
-        guard check.name.length() > 0 &&
-          check.sql.length() > 0 &&
-          !names.contains(check.name) else {
-          raise Input("invalid or duplicate business check in \{file}")
+    let names : Array[String] = []
+    for group in [source.checks, source.preserve] {
+      if group is Some(checks) {
+        guard !checks.is_empty() else {
+          raise Input(
+            "empty business checks or preservation queries in \{file}",
+          )
         }
-        names.push(check.name)
+        for check in checks {
+          guard check.name.length() > 0 &&
+            check.sql.length() > 0 &&
+            !names.contains(check.name) else {
+            raise Input("invalid or duplicate verification query in \{file}")
+          }
+          names.push(check.name)
+        }
       }
     }
     migrations.push({
@@ -51,6 +55,7 @@ pub fn load_migrations(
       checksum: source.checksum,
       sql: source.sql,
       checks: source.checks,
+      preserve: source.preserve,
     })
   }
   migrations.sort_by((a, b) => a.version - b.version)

@@ -10,17 +10,20 @@ export function migrationSource(filename, bytes, checksBytes) {
   let document;
   try { document = JSON.parse(decodeUtf8(checksBytes).replace(/^\uFEFF/, '')); }
   catch { throw new Error(`${filename}: invalid UTF-8 JSON checks document`); }
-  if (!document || Array.isArray(document) || Object.keys(document).join(',') !== 'checks' || !Array.isArray(document.checks) || !document.checks.length) {
-    throw new Error(`${filename}: expected a nonempty checks array`);
+  if (!document || Array.isArray(document) || !Object.keys(document).length || Object.keys(document).some(key => !['checks', 'preserve'].includes(key))) {
+    throw new Error(`${filename}: expected checks and/or preserve arrays`);
   }
   const names = new Set();
-  for (const check of document.checks) {
-    if (!check || Array.isArray(check) || Object.keys(check).some(key => !['name', 'sql'].includes(key)) || typeof check.name !== 'string' || !check.name.trim() || typeof check.sql !== 'string' || !check.sql.trim() || check.sql.includes('\0') || names.has(check.name)) {
-      throw new Error(`${filename}: checks require unique names and nonempty SQL, with no unknown fields`);
+  for (const [group, queries] of Object.entries(document)) {
+    if (!Array.isArray(queries) || !queries.length) throw new Error(`${filename}: ${group} must be a nonempty array`);
+    for (const check of queries) {
+      if (!check || Array.isArray(check) || Object.keys(check).some(key => !['name', 'sql'].includes(key)) || typeof check.name !== 'string' || !check.name.trim() || typeof check.sql !== 'string' || !check.sql.trim() || check.sql.includes('\0') || names.has(check.name)) {
+        throw new Error(`${filename}: checks and preserve require unique names and nonempty SQL, with no unknown fields`);
+      }
+      names.add(check.name);
     }
-    names.add(check.name);
   }
-  return { filename, sql, checks: document.checks, checksum: hash(`moonmolt-checks-v1\0${hash(bytes)}\0${hash(checksBytes)}`) };
+  return { filename, sql, ...document, checksum: hash(`moonmolt-checks-v1\0${hash(bytes)}\0${hash(checksBytes)}`) };
 }
 
 /** Snapshot strings only: no caller-supplied checksums, functions or mutable checks. */

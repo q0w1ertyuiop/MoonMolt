@@ -63,6 +63,7 @@ pub(all) struct Migration {
   checksum : String
   sql : String
   checks : Array[MigrationCheck]?
+  preserve : Array[MigrationCheck]?
 } derive(Eq, ToJson, @debug.Debug, @json.FromJson)
 pub fn Migration::equal(Self, Self) -> Bool
 pub fn Migration::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
@@ -85,6 +86,7 @@ pub(all) struct MigrationSource {
   checksum : String
   sql : String
   checks : Array[MigrationCheck]?
+  preserve : Array[MigrationCheck]?
 } derive(ToJson, @debug.Debug, @json.FromJson)
 pub fn MigrationSource::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
 pub fn MigrationSource::to_json(Self) -> Json
