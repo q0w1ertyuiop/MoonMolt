@@ -149,6 +149,9 @@ export class Adapter {
       // ignored tail without splitting strings, comments or trigger bodies.
       const tail = sql.slice(statement.sourceSQL.length);
       if (!sql.startsWith(statement.sourceSQL) || !/^(?:\s|;|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)*$/.test(tail)) throw failure('policy', `${label}: exactly one read-only query is required`);
+      // With no binding API, SQLite would treat parameters as NULL. In a
+      // NOT EXISTS predicate that can accidentally make an invalid check true.
+      if (statement.expandedSQL !== statement.sourceSQL) throw failure('policy', `${label}: parameters are not supported; use a complete query`);
       statement.setReadBigInts(true); statement.setReturnArrays(true);
       iterator = statement.iterate();
       const first = iterator.next(), second = iterator.next();

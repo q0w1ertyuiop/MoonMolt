@@ -29,6 +29,26 @@ const valid = [
   { name: 'all statuses set', sql: "-- 中文名称 / a;b\nWITH missing AS (SELECT * FROM orders WHERE status<>'paid') SELECT NOT EXISTS(SELECT 1 FROM missing); /* tail ; */" },
 ];
 
+test('unbound check parameters cannot silently turn a lossy upgrade into success', async t => {
+  for (const parameter of ['?', '?1', ':minimum', '@minimum', '$minimum']) {
+    const f = fixture(t);
+    writeFileSync(f.sqlPath, 'UPDATE orders SET amount_cents=0;');
+    f.checks([{ name: 'minimum order amount', sql: `SELECT NOT EXISTS(SELECT 1 FROM orders WHERE amount_cents < ${parameter});` }]);
+    const result = await run({ command: 'apply', ...f });
+    assert.equal(result.kind, 'policy', JSON.stringify(result));
+    assert.match(result.message, /parameters/);
+    assert.equal(inspect(f.db).rows[0].amount_cents, 2599);
+    assert.equal(inspect(f.db).history, 0);
+  }
+});
+
+test('question marks and named-parameter text in literals or comments remain valid', async t => {
+  const f = fixture(t);
+  f.checks([{ name: 'literal text', sql: "SELECT '? :limit @id $value' = '? :limit @id $value'; -- ?2 :ignored\n/* @ignored */" }]);
+  const result = await run({ command: 'apply', ...f });
+  assert.equal(result.ok, true, JSON.stringify(result));
+});
+
 test('business checks run in rehearsal and real upgrade and appear in reports', async t => {
   const f = fixture(t); f.checks(valid);
   const bytes = readFileSync(f.db);
