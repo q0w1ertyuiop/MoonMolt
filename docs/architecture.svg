@@ -30,7 +30,7 @@
   <text x="850" y="196" class="heading">Node.js：宿主操作</text>
   <text x="850" y="232" class="body">node:sqlite · 参数绑定</text>
   <text x="850" y="263" class="body">文件读取 · 指纹 · 在线备份</text>
-  <text x="850" y="294" class="body">TEMP / 保留名保护 · 只读核验</text>
+  <text x="850" y="294" class="body">定义编译保护 · 只读完整核验</text>
   <text x="850" y="327" class="small">关闭连接 · 回滚 · 清理临时副本</text>
   <text x="850" y="353" class="small">独立 Worker；原子取消标记与进度通知</text>
   <path d="M300 230H335" class="line"/>

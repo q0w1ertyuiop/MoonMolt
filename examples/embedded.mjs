@@ -32,6 +32,15 @@ try {
   assert.match(staleSchema.message, /fingerprint mismatch/);
   const status = await runInWorker({ command: 'status', db, migrations, expected_application_id: applicationId });
   assert.equal(status.current_version, 3);
+  // Trigger bodies are resolved only when their event is compiled. Reject a
+  // pending trigger which would erase history on a later application write.
+  const delayed = await runInWorker({ command: 'apply', db, migrations: [...migrations, {
+    filename: '000004_bad_trigger.sql',
+    sql: 'CREATE TRIGGER erase_history AFTER INSERT ON notes BEGIN DELETE FROM __moonmigrate_history; END;',
+  }] });
+  assert.equal(delayed.kind, 'policy');
+  assert.equal(delayed.stage, 'rehearse');
+  assert.match(delayed.message, /protected migration metadata/);
   assert.notEqual(status.fingerprint, expected_fingerprint);
   // Here the successful upgrade established the new trusted schema. Do not
   // automatically refresh a rejected expectation and retry an unknown database.
@@ -42,7 +51,7 @@ try {
   let note;
   try { note = { ...reader.prepare('SELECT * FROM notes').get() }; } finally { reader.close(); }
   assert.deepEqual(note, { id: 1, body: '保留这条笔记', pinned: 0 });
-  console.log(JSON.stringify({ application_id: applicationId, current_version: status.current_version, fingerprint: status.fingerprint, checks: result.result.checks, stale_request: stale.kind, stale_schema: staleSchema.kind, repeat_noop: repeat.noop, note }, null, 2));
+  console.log(JSON.stringify({ application_id: applicationId, current_version: status.current_version, fingerprint: status.fingerprint, checks: result.result.checks, stale_request: stale.kind, stale_schema: staleSchema.kind, rejected_delayed_trigger: delayed.kind, repeat_noop: repeat.noop, note }, null, 2));
 } finally {
   assert.equal(root.startsWith(join(tmpdir(), 'moonmolt-embedded-demo-')), true);
   rmSync(root, { recursive: true, force: true });

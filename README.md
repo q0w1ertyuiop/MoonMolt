@@ -292,6 +292,10 @@ node node/cli.mjs plan --before examples/before.json --after examples/after.json
 
 ## 验证与打包
 
+从 0.9.2 起，Node 适配器会在演练与原库整批提交前，以及只读 `verify` 中检查持久视图和触发器定义。SQLite 创建定义时可能尚未解析正文；错误触发器可以等到应用日后写入才删除迁移历史，损坏视图也可能在升级时未被使用。工具会编译视图查询和触发器目标的插入／删除／更新路径，由授权回调阻止访问保留元数据，并拒绝未解析的最终定义；不执行这些测试写入，也不解析 EXPLAIN 的输出。
+
+检查包含可写列、可用 ROWID 别名，兼容生成列、`WITHOUT ROWID` 和 `INSTEAD OF` 可写视图。允许前一脚本创建定义、后一脚本补齐依赖，但整批结束时需通过检查。SQLite 允许 `UPDATE OF` 指向尚不存在的列；该事件当前不能触发，后续通过 MoonMolt 增加列时会重新检查。它不是任意触发器业务行为的证明，业务数据仍需检查规则。已有损坏定义可用审阅过的新迁移修复，不能改写已执行脚本。`status` 和无操作 `apply` 仍只核对元数据；升级本工具后可主动运行 `verify` 核验旧库。可运行的笔记示例演示了拒绝延迟破坏历史的触发器。
+
 ```sh
 moon check --target js --deny-warn
 moon test --target js
