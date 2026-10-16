@@ -286,6 +286,8 @@ node node/cli.mjs plan --before examples/before.json --after examples/after.json
 
 备份位于 `<数据库路径>.moonmolt-backups/`，每次使用唯一文件名，旁边保存 JSON 执行报告；恢复步骤见 [备份恢复说明](docs/restore.md)。演练不会验证全部业务逻辑，也不能预先保证磁盘或进程在后续不会出错。若返回 `commit_outcome_unknown`，先检查历史，禁止盲目重放。
 
+从 0.9.1 起，备份文件在 SQLite 写入和进度通知前以独占方式创建；遇到同名文件直接失败，不覆盖，也不会把已有文件标记为本次的 `incomplete_backup`。新备份、临时快照和 JSON 报告按 POSIX `0600` 创建，新备份目录按 `0700` 创建（受 umask 约束）；已有目录的权限由部署方管理。Windows 权限继承目标目录 ACL，应将 `backup_dir` 指向适合应用私有数据的目录。报告写入失败通过 `report_warning` 单独返回；迁移已经提交时仍保留成功结果和有效备份，不能因此自动重放。`incomplete_backup` 仅表示本次创建但未完成的文件，不能用于恢复。
+
 重建带 `AUTOINCREMENT` 的表时，复制存量行并不能保留已经删除记录的 ID 上限。引擎会在每个脚本结束后检查同名表的 `sqlite_sequence`，发现上限降低或丢失即阻止升级。脚本应显式保留旧上限，并在插入新记录前恢复；更换表名时需按新名称恢复，引擎无法从任意 SQL 推断表的身份。自动模型不支持 AUTOINCREMENT，请使用人工 SQL。历史表的非标准结构、额外索引或触发器也会被拒绝。
 
 ## 验证与打包

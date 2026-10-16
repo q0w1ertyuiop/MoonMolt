@@ -2,6 +2,14 @@
 
 The MoonBit root package owns filename parsing, ordering, immutable history checks, schema drift detection, planning and execution order. JavaScript owns file bytes/SHA-256, SQLite connections, bindings, snapshots, authorizer callbacks and asynchronous backup.
 
+## Backup artifact creation (0.9.1)
+
+The Node host exclusively reserves each snapshot destination with `wx` and mode 0600 before passing it to SQLite's backup API or publishing its start event. `backupPath` is assigned only after reservation succeeds, so an existing destination is neither overwritten nor mislabeled as this session's incomplete snapshot. A reservation failure aborts preparation before SQL; the source transaction is rolled back by normal cleanup. Rehearsal snapshots follow the same creation rule in their temporary directory.
+
+New persistent backup directories use mode 0700; JSON reports use exclusive creation and mode 0600. POSIX permissions are constrained by umask. Existing directory permissions and Windows inherited ACLs remain deployment responsibilities. This is protection for newly created artifacts and accidental name collisions, not a guarantee against processes with directory write access. Reports retain the existing completion semantics: failed report persistence adds report_warning without changing a completed migration outcome, and only a successfully finished SQLite backup is exposed as backup. A reserved but unfinished snapshot is incomplete_backup and must not be used for recovery. The MoonBit driver operations and public interface are unchanged.
+
+## Execution lifecycle
+
 `Driver.call(operation, arguments)` returns a JSON value or raises `MigrationError`. `prepare(driver, request)` loads immutable SQL, opens `source`, acquires the write lock for `apply` (a read transaction for other commands), and checks history. `Prepared` retains both the schema fingerprint and the complete history snapshot. Advisory rehearsal closes its source read transaction before backup so it does not hold readers across asynchronous work. If `Prepared.backup_required` is true, the host makes a consistent backup through a separate read-only connection and opens a clone of the completed backup. `complete(driver, prepared)` verifies the clone's fingerprint and history before executing anything, then performs rehearsal and real execution. Always release connections and roll back any surviving transaction in a `finally` block, including when preparation fails. Callers using the lower-level `status`/`inspect` helpers directly should own a read transaction around the entire operation.
 
 The Node bridge exposes `prepare_json`, `complete_json` and `plan_json`; these are transport functions. Applications should use the queued `run` entry point, which owns connection lifecycle and reports.
