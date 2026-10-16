@@ -220,7 +220,55 @@ export class Adapter {
     return rows;
   }
 
+  validateDefinitions(id) {
+    const db = this.db(id);
+    // SQLite delays resolving view and trigger bodies until they are used.
+    // Compile representative programs without stepping or changing any rows.
+    const compile = (sql, label, view, optionalColumn) => {
+      let denied = false;
+      db.setAuthorizer((action, a, b, database) => {
+        const reserved = value => typeof value === 'string' && value.toLowerCase().startsWith('__moonmigrate_');
+        if (this.isCancelled() || reserved(a) || reserved(b) || (database && !['main', 'temp'].includes(database))) {
+          denied = true; return C.SQLITE_DENY;
+        }
+        return C.SQLITE_OK;
+      });
+      try { db.prepare(sql); return true; }
+      catch (error) {
+        this.throwIfCancelled();
+        // A view need not expose all three INSTEAD OF write operations. A
+        // protected access still takes precedence over an unavailable operation.
+        if (!denied && optionalColumn && error.message === `no such column: ${optionalColumn}`) return false;
+        if (!denied && view && error.message === `cannot modify ${view} because it is a view`) return false;
+        throw failure('policy', `${label}: ${denied ? 'definition accesses protected migration metadata' : error.message}`);
+      } finally { db.setAuthorizer(null); }
+    };
+    for (const view of this.query(id, "SELECT name FROM main.sqlite_schema WHERE type='view' ORDER BY name")) {
+      this.throwIfCancelled();
+      compile(`EXPLAIN SELECT * FROM main.${quote(view.name)} LIMIT 0`, `view ${JSON.stringify(view.name)}`);
+    }
+    const targets = this.query(id, `SELECT DISTINCT t.name,t.type FROM main.sqlite_schema AS t
+      JOIN main.sqlite_schema AS g ON t.name=g.tbl_name COLLATE NOCASE
+      WHERE g.type='trigger' AND t.type IN ('table','view') ORDER BY t.name`);
+    for (const target of targets) {
+      this.throwIfCancelled();
+      const label = `trigger program on ${JSON.stringify(target.name)}`;
+      const columns = this.query(id, `PRAGMA main.table_xinfo(${quote(target.name)})`).filter(c => c.hidden === 0).map(c => c.name);
+      const name = `main.${quote(target.name)}`, view = target.type === 'view' ? target.name : undefined;
+      // UPDATE OF rowid is distinct from UPDATE OF its declared INTEGER PK.
+      // Ask SQLite which aliases exist: WITHOUT ROWID tables and newer SQLite
+      // views do not expose them, while real columns can shadow individual names.
+      for (const alias of ['rowid', '_rowid_', 'oid']) {
+        if (!columns.some(c => c.toLowerCase() === alias) && compile(`EXPLAIN SELECT ${alias} FROM ${name} LIMIT 0`, label, undefined, alias)) columns.push(alias);
+      }
+      compile(`EXPLAIN INSERT INTO ${name} DEFAULT VALUES`, label, view);
+      compile(`EXPLAIN DELETE FROM ${name}`, label, view);
+      if (columns.length) compile(`EXPLAIN UPDATE ${name} SET ${columns.map(c => `${quote(c)}=${quote(c)}`).join(',')}`, label, view);
+    }
+  }
+
   validate(id, full = false) {
+    this.validateDefinitions(id);
     const describe = rows => JSON.stringify(rows.slice(0, 20)) + (rows.length > 20 ? '; additional findings omitted' : '');
     const fk = this.validationRows(id, 'PRAGMA main.foreign_key_check');
     if (fk.length) throw failure('policy', `foreign key check failed: ${describe(fk)}`);
