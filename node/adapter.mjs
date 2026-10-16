@@ -324,9 +324,17 @@ export class Adapter {
     if (command === 'apply') {
       this.persistentBackup = true;
       const folder = this.backupDir ?? `${this.sourcePath}.moonmolt-backups`;
-      mkdirSync(folder, { recursive: true });
-      this.backupPath = join(folder, `${new Date().toISOString().replaceAll(':', '-')}-${randomUUID()}.sqlite`);
-    } else this.backupPath = join(this.temp, 'before.sqlite');
+      mkdirSync(folder, { recursive: true, mode: 0o700 });
+      const candidate = join(folder, `${new Date().toISOString().replaceAll(':', '-')}-${randomUUID()}.sqlite`);
+      // Reserve exclusively, before SQLite opens the destination or progress
+      // exposes it. Do not report a colliding file as our incomplete backup.
+      writeFileSync(candidate, '', { flag: 'wx', mode: 0o600 });
+      this.backupPath = candidate;
+    } else {
+      const candidate = join(this.temp, 'before.sqlite');
+      writeFileSync(candidate, '', { flag: 'wx', mode: 0o600 });
+      this.backupPath = candidate;
+    }
     const reader = new DatabaseSync(this.sourcePath, { readOnly: true });
     this.onProgress({ stage: 'backup', operation: 'backup', state: 'start', backup: this.backupPath });
     try {
@@ -360,7 +368,7 @@ export class Adapter {
   saveReport(report) {
     if (!this.backupPath || !this.persistentBackup) return null;
     const reportPath = `${this.backupPath}.json`;
-    writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n', { flag: 'wx' });
+    writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     return reportPath;
   }
 }
