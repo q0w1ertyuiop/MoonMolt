@@ -316,7 +316,7 @@ fn apply_batch(
       duration_ms: finish - start,
       schema_before: before,
       schema_after: after,
-      tool_version: "0.9.2",
+      tool_version: "0.9.3",
     }
     ignore(
       driver.call("history_insert", {

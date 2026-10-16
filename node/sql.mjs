@@ -20,6 +20,38 @@ function skipTrivia(sql) {
   return offset;
 }
 
+/** Read only the INSTEAD OF event from SQLite-accepted view trigger headers.
+ * Quoted names and comments are skipped; the trigger body is never parsed.
+ */
+export function viewTriggerEvent(sql) {
+  if (typeof sql !== 'string') return undefined;
+  let offset = 0;
+  const recent = [];
+  while (offset < sql.length) {
+    offset += skipTrivia(sql.slice(offset));
+    if (offset === sql.length) break;
+    let token = null;
+    const ch = sql[offset];
+    if (['"', "'", '`', '['].includes(ch)) {
+      const close = ch === '[' ? ']' : ch;
+      offset++;
+      while (offset < sql.length) {
+        if (sql[offset] !== close) { offset++; continue; }
+        if (close !== ']' && sql[offset + 1] === close) { offset += 2; continue; }
+        offset++; break;
+      }
+    } else {
+      const word = /^[A-Za-z_][A-Za-z0-9_$]*/.exec(sql.slice(offset));
+      token = word ? word[0].toUpperCase() : ch;
+      offset += word ? word[0].length : 1;
+    }
+    recent.push(token);
+    if (recent.length > 3) recent.shift();
+    if (recent[0] === 'INSTEAD' && recent[1] === 'OF' && ['INSERT', 'UPDATE', 'DELETE'].includes(recent[2])) return recent[2];
+  }
+  return undefined;
+}
+
 /** Compile against the preceding statements' schema; never split at semicolons. */
 export function executeScript(db, sql, checkpoint, afterStatement = () => {}) {
   let remaining = sql;

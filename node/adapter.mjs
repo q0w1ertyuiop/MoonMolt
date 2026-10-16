@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { migrationSource } from './migrations.mjs';
-import { executeScript } from './sql.mjs';
+import { executeScript, viewTriggerEvent } from './sql.mjs';
 
 export const HISTORY = '__moonmigrate_history';
 const HISTORY_DDL = `CREATE TABLE "${HISTORY}" (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL, duration_ms INTEGER NOT NULL, schema_before TEXT NOT NULL, schema_after TEXT NOT NULL, tool_version TEXT NOT NULL)`;
@@ -224,7 +224,7 @@ export class Adapter {
     const db = this.db(id);
     // SQLite delays resolving view and trigger bodies until they are used.
     // Compile representative programs without stepping or changing any rows.
-    const compile = (sql, label, view, optionalColumn) => {
+    const compile = (sql, label, optionalColumn) => {
       let denied = false;
       db.setAuthorizer((action, a, b, database) => {
         const reserved = value => typeof value === 'string' && value.toLowerCase().startsWith('__moonmigrate_');
@@ -236,10 +236,7 @@ export class Adapter {
       try { db.prepare(sql); return true; }
       catch (error) {
         this.throwIfCancelled();
-        // A view need not expose all three INSTEAD OF write operations. A
-        // protected access still takes precedence over an unavailable operation.
         if (!denied && optionalColumn && error.message === `no such column: ${optionalColumn}`) return false;
-        if (!denied && view && error.message === `cannot modify ${view} because it is a view`) return false;
         throw failure('policy', `${label}: ${denied ? 'definition accesses protected migration metadata' : error.message}`);
       } finally { db.setAuthorizer(null); }
     };
@@ -254,16 +251,25 @@ export class Adapter {
       this.throwIfCancelled();
       const label = `trigger program on ${JSON.stringify(target.name)}`;
       const columns = this.query(id, `PRAGMA main.table_xinfo(${quote(target.name)})`).filter(c => c.hidden === 0).map(c => c.name);
-      const name = `main.${quote(target.name)}`, view = target.type === 'view' ? target.name : undefined;
+      const name = `main.${quote(target.name)}`;
+      let events = new Set(['INSERT', 'DELETE', 'UPDATE']);
+      if (target.type === 'view') {
+        events = new Set();
+        for (const trigger of this.query(id, "SELECT name,sql FROM main.sqlite_schema WHERE type='trigger' AND tbl_name=? COLLATE NOCASE", target.name)) {
+          const event = viewTriggerEvent(trigger.sql);
+          if (!event) throw failure('policy', `${label}: cannot identify INSTEAD OF event for ${JSON.stringify(trigger.name)}`);
+          events.add(event);
+        }
+      }
       // UPDATE OF rowid is distinct from UPDATE OF its declared INTEGER PK.
       // Ask SQLite which aliases exist: WITHOUT ROWID tables and newer SQLite
       // views do not expose them, while real columns can shadow individual names.
       for (const alias of ['rowid', '_rowid_', 'oid']) {
-        if (!columns.some(c => c.toLowerCase() === alias) && compile(`EXPLAIN SELECT ${alias} FROM ${name} LIMIT 0`, label, undefined, alias)) columns.push(alias);
+        if (!columns.some(c => c.toLowerCase() === alias) && compile(`EXPLAIN SELECT ${alias} FROM ${name} LIMIT 0`, label, alias)) columns.push(alias);
       }
-      compile(`EXPLAIN INSERT INTO ${name} DEFAULT VALUES`, label, view);
-      compile(`EXPLAIN DELETE FROM ${name}`, label, view);
-      if (columns.length) compile(`EXPLAIN UPDATE ${name} SET ${columns.map(c => `${quote(c)}=${quote(c)}`).join(',')}`, label, view);
+      if (events.has('INSERT')) compile(`EXPLAIN INSERT INTO ${name} DEFAULT VALUES`, label);
+      if (events.has('DELETE')) compile(`EXPLAIN DELETE FROM ${name}`, label);
+      if (events.has('UPDATE') && columns.length) compile(`EXPLAIN UPDATE ${name} SET ${columns.map(c => `${quote(c)}=${quote(c)}`).join(',')}`, label);
     }
   }
 
